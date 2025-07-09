@@ -4,6 +4,19 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
+)
+
+const (
+	// Default server settings
+	DefaultServerHost     = "localhost"
+	DefaultServerPort     = 3000
+	
+	// Default HTTP server timeouts
+	DefaultReadTimeout    = 15 * time.Second
+	DefaultWriteTimeout   = 15 * time.Second
+	DefaultIdleTimeout    = 60 * time.Second
+	DefaultMaxHeaderBytes = 1 << 20 // 1MB
 )
 
 // Config holds all configuration for the MCP server
@@ -14,8 +27,12 @@ type Config struct {
 
 // ServerConfig holds server-specific configuration
 type ServerConfig struct {
-	Host string
-	Port int
+	Host           string
+	Port           int
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	IdleTimeout    time.Duration
+	MaxHeaderBytes int
 }
 
 // LoggerConfig holds logger configuration
@@ -30,8 +47,12 @@ type LoggerConfig struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
-			Host: getEnv("MCP_SERVER_HOST", "localhost"),
-			Port: getEnvInt("MCP_SERVER_PORT", 3000),
+			Host:           getEnv("MCP_SERVER_HOST", DefaultServerHost),
+			Port:           getEnvInt("MCP_SERVER_PORT", DefaultServerPort),
+			ReadTimeout:    getEnvDuration("MCP_SERVER_READ_TIMEOUT", DefaultReadTimeout),
+			WriteTimeout:   getEnvDuration("MCP_SERVER_WRITE_TIMEOUT", DefaultWriteTimeout),
+			IdleTimeout:    getEnvDuration("MCP_SERVER_IDLE_TIMEOUT", DefaultIdleTimeout),
+			MaxHeaderBytes: getEnvInt("MCP_SERVER_MAX_HEADER_BYTES", DefaultMaxHeaderBytes),
 		},
 		Logger: LoggerConfig{
 			Level:   getEnv("MCP_LOG_LEVEL", "info"),
@@ -56,6 +77,22 @@ func (c *Config) Validate() error {
 	
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server port must be between 1 and 65535, got %d", c.Server.Port)
+	}
+
+	if c.Server.ReadTimeout < 0 {
+		return fmt.Errorf("server read timeout cannot be negative, got %v", c.Server.ReadTimeout)
+	}
+
+	if c.Server.WriteTimeout < 0 {
+		return fmt.Errorf("server write timeout cannot be negative, got %v", c.Server.WriteTimeout)
+	}
+
+	if c.Server.IdleTimeout < 0 {
+		return fmt.Errorf("server idle timeout cannot be negative, got %v", c.Server.IdleTimeout)
+	}
+
+	if c.Server.MaxHeaderBytes < 1 {
+		return fmt.Errorf("server max header bytes must be positive, got %d", c.Server.MaxHeaderBytes)
 	}
 
 	validLevels := map[string]bool{
@@ -92,6 +129,16 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// getEnvDuration gets environment variable as duration with default value
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
 		}
 	}
 	return defaultValue
