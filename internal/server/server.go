@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -142,4 +143,19 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		"status", response.Status,
 		"timestamp", response.Timestamp,
 	)
+}
+
+// ListenAndServe starts the HTTP server
+func (s *Server) ListenAndServe() error {
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the HTTP server
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.httpServer.Shutdown(ctx)
+}
+
+// Close immediately closes the HTTP server
+func (s *Server) Close() error {
+	return s.httpServer.Close()
 }
