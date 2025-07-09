@@ -1,12 +1,22 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 )
+
+// HealthResponse represents the health check response
+type HealthResponse struct {
+	Status    string `json:"status"`
+	Timestamp string `json:"timestamp"`
+	Service   string `json:"service"`
+	Version   string `json:"version"`
+}
 
 // Server represents the HTTP server
 type Server struct {
@@ -42,5 +52,45 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 
 // setupRoutes configures the HTTP routes
 func (s *Server) setupRoutes() {
-	// Placeholder - routes will be added in Steps 2.3 and 2.4
+	s.mux.HandleFunc("/health", s.handleHealth)
+}
+
+// handleHealth handles health check requests
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	// Log the health check request
+	s.logger.Info("health check requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	// Create health response
+	response := HealthResponse{
+		Status:    "healthy",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Service:   s.config.Logger.Service,
+		Version:   s.config.Logger.Version,
+	}
+
+	// Set content type
+	w.Header().Set("Content-Type", "application/json")
+
+	// Marshal response to JSON
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal health response",
+			"error", err,
+		)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Write successful response
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("health check completed successfully",
+		"status", response.Status,
+		"timestamp", response.Timestamp,
+	)
 }
