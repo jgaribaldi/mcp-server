@@ -14,3 +14,11 @@ logger:
   format: json
   service: mcp-server
   version: "1.0.0"
+
+mcp:
+  protocol_timeout: 30s
+  max_tools: 200
+  max_resources: 200
+  debug_mode: false
+  enable_metrics: true
+  buffer_size: 4096

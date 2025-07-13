@@ -83,6 +83,7 @@ func (ve ValidationErrors) Error() string {
 type FileConfig struct {
 	Server FileServerConfig `yaml:"server"`
 	Logger FileLoggerConfig `yaml:"logger"`
+	MCP    FileMCPConfig    `yaml:"mcp"`
 }
 
 type FileServerConfig struct {
@@ -99,6 +100,15 @@ type FileLoggerConfig struct {
 	Format  string `yaml:"format"`
 	Service string `yaml:"service"`
 	Version string `yaml:"version"`
+}
+
+type FileMCPConfig struct {
+	ProtocolTimeout string `yaml:"protocol_timeout"`
+	MaxTools        int    `yaml:"max_tools"`
+	MaxResources    int    `yaml:"max_resources"`
+	DebugMode       bool   `yaml:"debug_mode"`
+	EnableMetrics   bool   `yaml:"enable_metrics"`
+	BufferSize      int    `yaml:"buffer_size"`
 }
 
 // getEnvBool gets environment variable as boolean with default value
@@ -196,6 +206,28 @@ func mergeFileConfig(base *Config, file *FileConfig) *Config {
 	}
 	if file.Logger.Version != "" && os.Getenv("MCP_VERSION") == "" {
 		result.Logger.Version = file.Logger.Version
+	}
+	
+	// Merge MCP config (only if not overridden by env vars)
+	if file.MCP.ProtocolTimeout != "" && os.Getenv("MCP_PROTOCOL_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.MCP.ProtocolTimeout); err == nil {
+			result.MCP.ProtocolTimeout = duration
+		}
+	}
+	if file.MCP.MaxTools != 0 && os.Getenv("MCP_MAX_TOOLS") == "" {
+		result.MCP.MaxTools = file.MCP.MaxTools
+	}
+	if file.MCP.MaxResources != 0 && os.Getenv("MCP_MAX_RESOURCES") == "" {
+		result.MCP.MaxResources = file.MCP.MaxResources
+	}
+	if os.Getenv("MCP_DEBUG_MODE") == "" {
+		result.MCP.DebugMode = file.MCP.DebugMode
+	}
+	if os.Getenv("MCP_ENABLE_METRICS") == "" {
+		result.MCP.EnableMetrics = file.MCP.EnableMetrics
+	}
+	if file.MCP.BufferSize != 0 && os.Getenv("MCP_BUFFER_SIZE") == "" {
+		result.MCP.BufferSize = file.MCP.BufferSize
 	}
 	
 	return &result

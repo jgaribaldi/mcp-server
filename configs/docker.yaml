@@ -14,3 +14,11 @@ logger:
   format: json
   service: mcp-server
   version: "docker"
+
+mcp:
+  protocol_timeout: 45s
+  max_tools: 100
+  max_resources: 100
+  debug_mode: false
+  enable_metrics: true
+  buffer_size: 4096
