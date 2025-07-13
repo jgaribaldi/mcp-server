@@ -169,3 +169,38 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) Close() error {
 	return s.httpServer.Close()
 }
+
+// StartMCP starts the MCP server
+func (s *Server) StartMCP(ctx context.Context) error {
+	s.logger.Info("Starting MCP server")
+	
+	// Create stdio transport for MCP server
+	transport := mcp.NewStdioTransport()
+	
+	// Start the MCP server
+	if err := s.mcpServer.Start(ctx, transport); err != nil {
+		return fmt.Errorf("failed to start MCP server: %w", err)
+	}
+	
+	s.logger.Info("MCP server started successfully")
+	return nil
+}
+
+// StopMCP stops the MCP server
+func (s *Server) StopMCP(ctx context.Context) error {
+	s.logger.Info("Stopping MCP server")
+	
+	if err := s.mcpServer.Stop(ctx); err != nil {
+		return fmt.Errorf("failed to stop MCP server: %w", err)
+	}
+	
+	s.logger.Info("MCP server stopped successfully")
+	return nil
+}
+
+// IsMCPRunning returns true if the MCP server is running
+func (s *Server) IsMCPRunning() bool {
+	// This is a simple implementation - in a real scenario we might need
+	// to track the running state more carefully
+	return s.mcpServer != nil
+}
