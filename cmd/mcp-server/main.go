@@ -119,15 +119,25 @@ func gracefulShutdown(srv *server.Server, log *logger.Logger) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
+	// Shutdown MCP server first
+	log.Info("Shutting down MCP server...")
+	if err := srv.StopMCP(shutdownCtx); err != nil {
+		log.Error("Error during MCP server shutdown", "error", err)
+	} else {
+		log.Info("MCP server stopped gracefully")
+	}
+
 	// Shutdown HTTP server gracefully
 	log.Info("Shutting down HTTP server...")
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Error("Error during server shutdown", "error", err)
+		log.Error("Error during HTTP server shutdown", "error", err)
 		// Force close if graceful shutdown fails
 		if closeErr := srv.Close(); closeErr != nil {
-			log.Error("Error force closing server", "error", closeErr)
+			log.Error("Error force closing HTTP server", "error", closeErr)
 		}
 	} else {
 		log.Info("HTTP server stopped gracefully")
 	}
+
+	log.Info("All servers stopped gracefully")
 }
