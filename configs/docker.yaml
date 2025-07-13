@@ -1,0 +1,16 @@
+# Docker container configuration
+# Optimized for containerized deployment
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 20s
+  write_timeout: 20s
+  idle_timeout: 90s
+  max_header_bytes: 1048576  # 1MB
+
+logger:
+  level: info
+  format: json
+  service: mcp-server
+  version: "docker"

@@ -1,0 +1,16 @@
+# Production environment configuration
+# Optimized for production deployment with performance focus
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 15s
+  write_timeout: 15s
+  idle_timeout: 60s
+  max_header_bytes: 2097152  # 2MB
+
+logger:
+  level: info
+  format: json
+  service: mcp-server
+  version: "1.0.0"
