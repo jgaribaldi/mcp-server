@@ -9,6 +9,7 @@ import (
 
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
+	"mcp-server/internal/mcp"
 )
 
 // HealthResponse represents the health check response
@@ -30,6 +31,7 @@ type ReadyResponse struct {
 // Server represents the HTTP server
 type Server struct {
 	httpServer *http.Server
+	mcpServer  mcp.MCPServer
 	logger     *logger.Logger
 	config     *config.Config
 	mux        *http.ServeMux
@@ -39,10 +41,18 @@ type Server struct {
 func New(cfg *config.Config, log *logger.Logger) *Server {
 	mux := http.NewServeMux()
 
+	// Create MCP server instance
+	mcpImpl := mcp.Implementation{
+		Name:    cfg.Logger.Service,
+		Version: cfg.Logger.Version,
+	}
+	mcpSrv := mcp.NewServer(mcpImpl, cfg, log)
+
 	server := &Server{
-		logger: log,
-		config: cfg,
-		mux:    mux,
+		logger:    log,
+		config:    cfg,
+		mux:       mux,
+		mcpServer: mcpSrv,
 		httpServer: &http.Server{
 			Addr:           fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 			Handler:        mux,
