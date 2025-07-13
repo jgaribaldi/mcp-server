@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -57,8 +59,118 @@ func (ve ValidationErrors) Error() string {
 	return fmt.Sprintf("multiple validation errors: %s", strings.Join(ve, "; "))
 }
 
-// Load loads configuration from environment variables with defaults
+// FileConfig represents configuration loaded from YAML files
+type FileConfig struct {
+	Server FileServerConfig `yaml:"server"`
+	Logger FileLoggerConfig `yaml:"logger"`
+}
+
+type FileServerConfig struct {
+	Host           string `yaml:"host"`
+	Port           int    `yaml:"port"`
+	ReadTimeout    string `yaml:"read_timeout"`
+	WriteTimeout   string `yaml:"write_timeout"`
+	IdleTimeout    string `yaml:"idle_timeout"`
+	MaxHeaderBytes int    `yaml:"max_header_bytes"`
+}
+
+type FileLoggerConfig struct {
+	Level   string `yaml:"level"`
+	Format  string `yaml:"format"`
+	Service string `yaml:"service"`
+	Version string `yaml:"version"`
+}
+
+// loadConfigFile attempts to load configuration from YAML files
+func loadConfigFile() (*FileConfig, error) {
+	configPath := getEnv("MCP_CONFIG_FILE", "")
+	if configPath == "" {
+		// Try default locations
+		candidates := []string{
+			"configs/development.yaml",
+			"configs/production.yaml",
+			"configs/docker.yaml",
+		}
+		
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				configPath = candidate
+				break
+			}
+		}
+	}
+	
+	if configPath == "" {
+		return nil, nil // No config file found, not an error
+	}
+	
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+	}
+	
+	var fileConfig FileConfig
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse config file %s: %w", configPath, err)
+	}
+	
+	return &fileConfig, nil
+}
+
+// mergeFileConfig merges file configuration with base config, respecting environment variable precedence
+func mergeFileConfig(base *Config, file *FileConfig) *Config {
+	if file == nil {
+		return base
+	}
+	
+	result := *base // Copy base config
+	
+	// Merge server config (only if not overridden by env vars)
+	if file.Server.Host != "" && os.Getenv("MCP_SERVER_HOST") == "" {
+		result.Server.Host = file.Server.Host
+	}
+	if file.Server.Port != 0 && os.Getenv("MCP_SERVER_PORT") == "" {
+		result.Server.Port = file.Server.Port
+	}
+	if file.Server.ReadTimeout != "" && os.Getenv("MCP_SERVER_READ_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.Server.ReadTimeout); err == nil {
+			result.Server.ReadTimeout = duration
+		}
+	}
+	if file.Server.WriteTimeout != "" && os.Getenv("MCP_SERVER_WRITE_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.Server.WriteTimeout); err == nil {
+			result.Server.WriteTimeout = duration
+		}
+	}
+	if file.Server.IdleTimeout != "" && os.Getenv("MCP_SERVER_IDLE_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.Server.IdleTimeout); err == nil {
+			result.Server.IdleTimeout = duration
+		}
+	}
+	if file.Server.MaxHeaderBytes != 0 && os.Getenv("MCP_SERVER_MAX_HEADER_BYTES") == "" {
+		result.Server.MaxHeaderBytes = file.Server.MaxHeaderBytes
+	}
+	
+	// Merge logger config (only if not overridden by env vars)
+	if file.Logger.Level != "" && os.Getenv("MCP_LOG_LEVEL") == "" {
+		result.Logger.Level = file.Logger.Level
+	}
+	if file.Logger.Format != "" && os.Getenv("MCP_LOG_FORMAT") == "" {
+		result.Logger.Format = file.Logger.Format
+	}
+	if file.Logger.Service != "" && os.Getenv("MCP_SERVICE_NAME") == "" {
+		result.Logger.Service = file.Logger.Service
+	}
+	if file.Logger.Version != "" && os.Getenv("MCP_VERSION") == "" {
+		result.Logger.Version = file.Logger.Version
+	}
+	
+	return &result
+}
+
+// Load loads configuration from environment variables and files with defaults
 func Load() (*Config, error) {
+	// Load base configuration with defaults
 	cfg := &Config{
 		Server: ServerConfig{
 			Host:           getEnv("MCP_SERVER_HOST", DefaultServerHost),
@@ -75,11 +187,22 @@ func Load() (*Config, error) {
 			Version: getEnv("MCP_VERSION", "dev"),
 		},
 	}
-
+	
+	// Try to load configuration file
+	fileConfig, err := loadConfigFile()
+	if err != nil {
+		// Log warning but don't fail - env vars might be sufficient
+		// Note: We can't use logger here as it's not initialized yet
+		fmt.Fprintf(os.Stderr, "Warning: failed to load config file: %v\n", err)
+	}
+	
+	// Merge file config with environment variables taking precedence
+	cfg = mergeFileConfig(cfg, fileConfig)
+	
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
-
+	
 	return cfg, nil
 }
 
