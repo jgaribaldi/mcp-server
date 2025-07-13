@@ -11,9 +11,10 @@ server:
 
 logger:
   level: debug
-  format: text
+  format: console
   service: mcp-server
   version: dev
+  use_emojis: true
 
 mcp:
   protocol_timeout: 60s

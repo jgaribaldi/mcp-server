@@ -56,10 +56,11 @@ func main() {
 // setupLogging initializes the logger with the given configuration
 func setupLogging(cfg *config.Config) (*logger.Logger, error) {
 	return logger.New(logger.Config{
-		Level:   cfg.Logger.Level,
-		Format:  cfg.Logger.Format,
-		Service: cfg.Logger.Service,
-		Version: cfg.Logger.Version,
+		Level:     cfg.Logger.Level,
+		Format:    cfg.Logger.Format,
+		Service:   cfg.Logger.Service,
+		Version:   cfg.Logger.Version,
+		UseEmojis: cfg.Logger.UseEmojis,
 	})
 }
 

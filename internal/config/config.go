@@ -50,10 +50,11 @@ type ServerConfig struct {
 
 // LoggerConfig holds logger configuration
 type LoggerConfig struct {
-	Level   string
-	Format  string
-	Service string
-	Version string
+	Level     string
+	Format    string
+	Service   string
+	Version   string
+	UseEmojis bool
 }
 
 // MCPConfig holds MCP-specific configuration
@@ -96,10 +97,11 @@ type FileServerConfig struct {
 }
 
 type FileLoggerConfig struct {
-	Level   string `yaml:"level"`
-	Format  string `yaml:"format"`
-	Service string `yaml:"service"`
-	Version string `yaml:"version"`
+	Level     string `yaml:"level"`
+	Format    string `yaml:"format"`
+	Service   string `yaml:"service"`
+	Version   string `yaml:"version"`
+	UseEmojis bool   `yaml:"use_emojis"`
 }
 
 type FileMCPConfig struct {
@@ -207,6 +209,9 @@ func mergeFileConfig(base *Config, file *FileConfig) *Config {
 	if file.Logger.Version != "" && os.Getenv("MCP_VERSION") == "" {
 		result.Logger.Version = file.Logger.Version
 	}
+	if os.Getenv("MCP_LOG_USE_EMOJIS") == "" {
+		result.Logger.UseEmojis = file.Logger.UseEmojis
+	}
 	
 	// Merge MCP config (only if not overridden by env vars)
 	if file.MCP.ProtocolTimeout != "" && os.Getenv("MCP_PROTOCOL_TIMEOUT") == "" {
@@ -246,10 +251,11 @@ func Load() (*Config, error) {
 			MaxHeaderBytes: getEnvInt("MCP_SERVER_MAX_HEADER_BYTES", DefaultMaxHeaderBytes),
 		},
 		Logger: LoggerConfig{
-			Level:   getEnv("MCP_LOG_LEVEL", "info"),
-			Format:  getEnv("MCP_LOG_FORMAT", "json"),
-			Service: getEnv("MCP_SERVICE_NAME", "mcp-server"),
-			Version: getEnv("MCP_VERSION", "dev"),
+			Level:     getEnv("MCP_LOG_LEVEL", "info"),
+			Format:    getEnv("MCP_LOG_FORMAT", "console"),
+			Service:   getEnv("MCP_SERVICE_NAME", "mcp-server"),
+			Version:   getEnv("MCP_VERSION", "dev"),
+			UseEmojis: getEnvBool("MCP_LOG_USE_EMOJIS", true),
 		},
 		MCP: MCPConfig{
 			ProtocolTimeout: getEnvDuration("MCP_PROTOCOL_TIMEOUT", DefaultProtocolTimeout),
