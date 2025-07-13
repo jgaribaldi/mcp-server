@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -335,6 +336,36 @@ func (c *Config) Validate() error {
 		return errors
 	}
 	return nil
+}
+
+// String returns a human-readable configuration summary
+func (c *Config) String() string {
+	return fmt.Sprintf(`Configuration Summary:
+Server: %s:%d (timeouts: read=%v, write=%v, idle=%v)
+Logger: level=%s, format=%s, service=%s
+MCP: timeout=%v, tools=%d, resources=%d, debug=%v`,
+		c.Server.Host, c.Server.Port,
+		c.Server.ReadTimeout, c.Server.WriteTimeout, c.Server.IdleTimeout,
+		c.Logger.Level, c.Logger.Format, c.Logger.Service,
+		c.MCP.ProtocolTimeout, c.MCP.MaxTools, c.MCP.MaxResources, c.MCP.DebugMode)
+}
+
+// ToJSON exports configuration as JSON for debugging
+func (c *Config) ToJSON() (string, error) {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal config to JSON: %w", err)
+	}
+	return string(data), nil
+}
+
+// ValidationReport returns detailed validation report
+func (c *Config) ValidationReport() string {
+	if err := c.Validate(); err == nil {
+		return "Configuration validation: PASSED"
+	} else {
+		return fmt.Sprintf("Configuration validation: FAILED\n%v", err)
+	}
 }
 
 // getEnv gets environment variable with default value
