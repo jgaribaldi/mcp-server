@@ -340,9 +340,9 @@ func (c *Config) Validate() error {
 		errors = append(errors, fmt.Sprintf("invalid log level: %s (valid options: debug, info, warn, error)", c.Logger.Level))
 	}
 	
-	validFormats := map[string]bool{"json": true, "text": true}
+	validFormats := map[string]bool{"json": true, "text": true, "console": true}
 	if !validFormats[c.Logger.Format] {
-		errors = append(errors, fmt.Sprintf("invalid log format: %s (valid options: json, text)", c.Logger.Format))
+		errors = append(errors, fmt.Sprintf("invalid log format: %s (valid options: json, text, console)", c.Logger.Format))
 	}
 	
 	// MCP configuration validation
