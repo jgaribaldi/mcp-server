@@ -73,6 +73,12 @@ func setupServers(cfg *config.Config, log *logger.Logger) (*server.Server, error
 	// Initialize HTTP server
 	srv := server.New(cfg, log)
 
+	// Start MCP server
+	ctx := context.Background()
+	if err := srv.StartMCP(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start MCP server: %w", err)
+	}
+
 	return srv, nil
 }
 
@@ -93,7 +99,9 @@ func runServers(srv *server.Server, log *logger.Logger) error {
 		}
 	}()
 
-	log.Info("All servers are running")
+	log.Info("All servers are running",
+		"http_endpoint", fmt.Sprintf("http://%s:%d", "localhost", 3000),
+		"mcp_protocol", "stdio")
 
 	// Wait for shutdown signal or server error
 	select {
