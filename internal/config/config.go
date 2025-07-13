@@ -20,12 +20,21 @@ const (
 	DefaultWriteTimeout   = 15 * time.Second
 	DefaultIdleTimeout    = 60 * time.Second
 	DefaultMaxHeaderBytes = 1 << 20 // 1MB
+	
+	// Default MCP settings
+	DefaultProtocolTimeout = 30 * time.Second
+	DefaultMaxTools        = 100
+	DefaultMaxResources    = 100
+	DefaultDebugMode       = false
+	DefaultEnableMetrics   = true
+	DefaultBufferSize      = 4096
 )
 
 // Config holds all configuration for the MCP server
 type Config struct {
 	Server ServerConfig
 	Logger LoggerConfig
+	MCP    MCPConfig
 }
 
 // ServerConfig holds server-specific configuration
@@ -44,6 +53,16 @@ type LoggerConfig struct {
 	Format  string
 	Service string
 	Version string
+}
+
+// MCPConfig holds MCP-specific configuration
+type MCPConfig struct {
+	ProtocolTimeout time.Duration
+	MaxTools        int
+	MaxResources    int
+	DebugMode       bool
+	EnableMetrics   bool
+	BufferSize      int
 }
 
 // ValidationErrors represents multiple validation errors
@@ -79,6 +98,19 @@ type FileLoggerConfig struct {
 	Format  string `yaml:"format"`
 	Service string `yaml:"service"`
 	Version string `yaml:"version"`
+}
+
+// getEnvBool gets environment variable as boolean with default value
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		switch strings.ToLower(value) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		}
+	}
+	return defaultValue
 }
 
 // loadConfigFile attempts to load configuration from YAML files
@@ -186,6 +218,14 @@ func Load() (*Config, error) {
 			Service: getEnv("MCP_SERVICE_NAME", "mcp-server"),
 			Version: getEnv("MCP_VERSION", "dev"),
 		},
+		MCP: MCPConfig{
+			ProtocolTimeout: getEnvDuration("MCP_PROTOCOL_TIMEOUT", DefaultProtocolTimeout),
+			MaxTools:        getEnvInt("MCP_MAX_TOOLS", DefaultMaxTools),
+			MaxResources:    getEnvInt("MCP_MAX_RESOURCES", DefaultMaxResources),
+			DebugMode:       getEnvBool("MCP_DEBUG_MODE", DefaultDebugMode),
+			EnableMetrics:   getEnvBool("MCP_ENABLE_METRICS", DefaultEnableMetrics),
+			BufferSize:      getEnvInt("MCP_BUFFER_SIZE", DefaultBufferSize),
+		},
 	}
 	
 	// Try to load configuration file
@@ -264,6 +304,31 @@ func (c *Config) Validate() error {
 	validFormats := map[string]bool{"json": true, "text": true}
 	if !validFormats[c.Logger.Format] {
 		errors = append(errors, fmt.Sprintf("invalid log format: %s (valid options: json, text)", c.Logger.Format))
+	}
+	
+	// MCP configuration validation
+	if c.MCP.ProtocolTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("MCP protocol timeout cannot be negative, got %v (hint: use 30s or larger)", c.MCP.ProtocolTimeout))
+	} else if c.MCP.ProtocolTimeout > 10*time.Minute {
+		errors = append(errors, fmt.Sprintf("MCP protocol timeout is very large: %v (hint: typically 30s-5m)", c.MCP.ProtocolTimeout))
+	}
+	
+	if c.MCP.MaxTools < 1 {
+		errors = append(errors, fmt.Sprintf("MCP max tools must be positive, got %d (hint: use 10-1000)", c.MCP.MaxTools))
+	} else if c.MCP.MaxTools > 10000 {
+		errors = append(errors, fmt.Sprintf("MCP max tools is very large: %d (hint: typically 10-1000)", c.MCP.MaxTools))
+	}
+	
+	if c.MCP.MaxResources < 1 {
+		errors = append(errors, fmt.Sprintf("MCP max resources must be positive, got %d (hint: use 10-1000)", c.MCP.MaxResources))
+	} else if c.MCP.MaxResources > 10000 {
+		errors = append(errors, fmt.Sprintf("MCP max resources is very large: %d (hint: typically 10-1000)", c.MCP.MaxResources))
+	}
+	
+	if c.MCP.BufferSize < 1024 {
+		errors = append(errors, fmt.Sprintf("MCP buffer size too small: %d (hint: use 4096 or larger)", c.MCP.BufferSize))
+	} else if c.MCP.BufferSize > 1024*1024 {
+		errors = append(errors, fmt.Sprintf("MCP buffer size very large: %d (hint: typically 4KB-64KB)", c.MCP.BufferSize))
 	}
 	
 	if len(errors) > 0 {
