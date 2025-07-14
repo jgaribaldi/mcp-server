@@ -10,6 +10,7 @@ import (
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/tools"
 )
 
 // HealthResponse represents the health check response
@@ -32,6 +33,7 @@ type ReadyResponse struct {
 type Server struct {
 	httpServer *http.Server
 	mcpServer  mcp.MCPServer
+	registry   tools.ToolRegistry
 	logger     *logger.Logger
 	config     *config.Config
 	mux        *http.ServeMux
@@ -40,6 +42,15 @@ type Server struct {
 // New creates a new HTTP server instance
 func New(cfg *config.Config, log *logger.Logger) *Server {
 	mux := http.NewServeMux()
+
+	// Create tool registry using factory
+	registryFactory := tools.NewRegistryFactory(cfg, log)
+	registry, err := registryFactory.CreateRegistry()
+	if err != nil {
+		log.Error("failed to create tool registry", "error", err)
+		// Fall back to default registry for robustness
+		registry = tools.NewDefaultToolRegistry(cfg, log)
+	}
 
 	// Create MCP server instance
 	mcpImpl := mcp.Implementation{
@@ -53,6 +64,7 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 		config:    cfg,
 		mux:       mux,
 		mcpServer: mcpSrv,
+		registry:  registry,
 		httpServer: &http.Server{
 			Addr:           fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 			Handler:        mux,
@@ -172,13 +184,23 @@ func (s *Server) Close() error {
 
 // StartMCP starts the MCP server
 func (s *Server) StartMCP(ctx context.Context) error {
-	s.logger.Info("Starting MCP server")
+	s.logger.Info("Starting MCP server and tool registry")
+	
+	// Start tool registry first
+	if err := s.registry.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start tool registry: %w", err)
+	}
+	s.logger.Info("Tool registry started successfully")
 	
 	// Create stdio transport for MCP server
 	transport := mcp.NewStdioTransport()
 	
 	// Start the MCP server
 	if err := s.mcpServer.Start(ctx, transport); err != nil {
+		// If MCP server fails to start, stop the registry
+		if stopErr := s.registry.Stop(ctx); stopErr != nil {
+			s.logger.Error("failed to stop registry after MCP server start failure", "error", stopErr)
+		}
 		return fmt.Errorf("failed to start MCP server: %w", err)
 	}
 	
@@ -188,13 +210,22 @@ func (s *Server) StartMCP(ctx context.Context) error {
 
 // StopMCP stops the MCP server
 func (s *Server) StopMCP(ctx context.Context) error {
-	s.logger.Info("Stopping MCP server")
+	s.logger.Info("Stopping MCP server and tool registry")
 	
+	// Stop MCP server first
 	if err := s.mcpServer.Stop(ctx); err != nil {
-		return fmt.Errorf("failed to stop MCP server: %w", err)
+		s.logger.Error("failed to stop MCP server", "error", err)
+		// Continue to stop registry even if MCP server fails to stop
+	} else {
+		s.logger.Info("MCP server stopped successfully")
 	}
 	
-	s.logger.Info("MCP server stopped successfully")
+	// Stop tool registry
+	if err := s.registry.Stop(ctx); err != nil {
+		return fmt.Errorf("failed to stop tool registry: %w", err)
+	}
+	s.logger.Info("Tool registry stopped successfully")
+	
 	return nil
 }
 
