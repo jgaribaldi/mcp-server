@@ -124,6 +124,17 @@ func (r *DefaultToolRegistry) Unregister(name string) error {
 		return fmt.Errorf("%w: %s", ErrToolNotFound, name)
 	}
 
+	// Unregister from adapter if available
+	if r.adapter != nil {
+		if err := r.adapter.UnregisterTool(name); err != nil {
+			r.logger.Error("failed to unregister tool from adapter",
+				"name", name,
+				"error", err,
+			)
+			// Continue with local unregistration even if adapter fails
+		}
+	}
+
 	// Remove from all maps
 	delete(r.factories, name)
 	delete(r.tools, name)
@@ -181,6 +192,18 @@ func (r *DefaultToolRegistry) Get(name string) (mcp.Tool, error) {
 			"error", err,
 		)
 		return nil, fmt.Errorf("%w: %v", ErrToolValidation, err)
+	}
+
+	// Register with adapter if available
+	if r.adapter != nil {
+		if err := r.adapter.RegisterTool(tool); err != nil {
+			r.logger.Error("failed to register tool with adapter",
+				"name", name,
+				"error", err,
+			)
+			// Continue even if adapter registration fails - this is business logic
+			// We still store the tool locally for fallback
+		}
 	}
 
 	// Store tool instance (need write lock)
@@ -384,6 +407,15 @@ func (r *DefaultToolRegistry) Start(ctx context.Context) error {
 
 	r.logger.Info("starting tool registry")
 
+	// Start adapter if available
+	if r.adapter != nil {
+		if err := r.adapter.Start(ctx); err != nil {
+			r.logger.Error("failed to start adapter", "error", err)
+			return fmt.Errorf("failed to start adapter: %w", err)
+		}
+		r.logger.Info("adapter started successfully")
+	}
+
 	r.running = true
 	r.lastCheck = time.Now()
 
@@ -401,6 +433,16 @@ func (r *DefaultToolRegistry) Stop(ctx context.Context) error {
 	}
 
 	r.logger.Info("stopping tool registry")
+
+	// Stop adapter if available
+	if r.adapter != nil {
+		if err := r.adapter.Stop(ctx); err != nil {
+			r.logger.Error("failed to stop adapter", "error", err)
+			// Continue with registry shutdown even if adapter fails
+		} else {
+			r.logger.Info("adapter stopped successfully")
+		}
+	}
 
 	// Clear all tools
 	r.tools = make(map[string]mcp.Tool)
@@ -441,6 +483,16 @@ func (r *DefaultToolRegistry) Health() RegistryHealth {
 			health.ActiveTools++
 		case ToolStatusError:
 			health.ErrorTools++
+		}
+	}
+
+	// Check adapter health if available
+	if r.adapter != nil {
+		adapterHealth := r.adapter.Health()
+		if adapterHealth.Status != "healthy" {
+			health.Status = "degraded"
+			health.Errors = append(health.Errors, 
+				fmt.Sprintf("adapter status: %s", adapterHealth.Status))
 		}
 	}
 

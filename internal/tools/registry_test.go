@@ -12,6 +12,7 @@ import (
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/tools/adapters"
 )
 
 // Mock implementations for testing
@@ -501,5 +502,265 @@ func TestDefaultToolRegistry_Health(t *testing.T) {
 		t.Error("Expected test_tool in health status")
 	} else if status != string(ToolStatusActive) {
 		t.Errorf("Expected active status for test_tool, got '%s'", status)
+	}
+}
+
+// Mock adapter for testing business logic
+type mockLibraryAdapter struct {
+	tools             map[string]mcp.Tool
+	resources         map[string]mcp.Resource
+	running           bool
+	startError        error
+	stopError         error
+	registerError     error
+	unregisterError   error
+	healthStatus      string
+	mu                sync.RWMutex
+}
+
+func newMockAdapter() *mockLibraryAdapter {
+	return &mockLibraryAdapter{
+		tools:        make(map[string]mcp.Tool),
+		resources:    make(map[string]mcp.Resource),
+		healthStatus: "healthy",
+	}
+}
+
+func (m *mockLibraryAdapter) RegisterTool(tool mcp.Tool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.registerError != nil {
+		return m.registerError
+	}
+	m.tools[tool.Name()] = tool
+	return nil
+}
+
+func (m *mockLibraryAdapter) UnregisterTool(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.unregisterError != nil {
+		return m.unregisterError
+	}
+	delete(m.tools, name)
+	return nil
+}
+
+func (m *mockLibraryAdapter) GetTool(name string) (mcp.Tool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	tool, exists := m.tools[name]
+	if !exists {
+		return nil, fmt.Errorf("tool not found")
+	}
+	return tool, nil
+}
+
+func (m *mockLibraryAdapter) ListTools() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var names []string
+	for name := range m.tools {
+		names = append(names, name)
+	}
+	return names
+}
+
+func (m *mockLibraryAdapter) RegisterResource(resource mcp.Resource) error   { return nil }
+func (m *mockLibraryAdapter) UnregisterResource(uri string) error            { return nil }
+func (m *mockLibraryAdapter) GetResource(uri string) (mcp.Resource, error)   { return nil, nil }
+func (m *mockLibraryAdapter) ListResources() []string                        { return nil }
+
+func (m *mockLibraryAdapter) Start(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.startError != nil {
+		return m.startError
+	}
+	m.running = true
+	return nil
+}
+
+func (m *mockLibraryAdapter) Stop(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopError != nil {
+		return m.stopError
+	}
+	m.running = false
+	return nil
+}
+
+func (m *mockLibraryAdapter) IsRunning() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.running
+}
+
+func (m *mockLibraryAdapter) Health() adapters.AdapterHealth {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return adapters.AdapterHealth{
+		Status:        m.healthStatus,
+		Library:       "mock",
+		Version:       "1.0.0",
+		ToolCount:     len(m.tools),
+		ResourceCount: len(m.resources),
+		LastCheck:     time.Now().Format(time.RFC3339),
+		Errors:        []string{},
+	}
+}
+
+// Helper to create registry with mock adapter
+func createTestRegistryWithAdapter(adapter *mockLibraryAdapter) ToolRegistry {
+	cfg := &config.Config{}
+	log, _ := logger.NewDefault() // Use default logger for tests
+	return NewDefaultToolRegistryWithAdapter(cfg, log, adapter)
+}
+
+// Test adapter integration business logic
+func TestDefaultToolRegistry_AdapterIntegration(t *testing.T) {
+	adapter := newMockAdapter()
+	registry := createTestRegistryWithAdapter(adapter)
+	ctx := context.Background()
+
+	// Start registry should start adapter
+	err := registry.Start(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error starting registry, got: %v", err)
+	}
+
+	if !adapter.IsRunning() {
+		t.Error("Expected adapter to be running after registry start")
+	}
+
+	// Register tool should register with adapter
+	factory := createTestFactory("test_tool")
+	err = registry.Register("test_tool", factory)
+	if err != nil {
+		t.Fatalf("Expected no error registering tool, got: %v", err)
+	}
+
+	// Get tool should trigger adapter registration
+	tool, err := registry.Get("test_tool")
+	if err != nil {
+		t.Fatalf("Expected no error getting tool, got: %v", err)
+	}
+
+	if tool.Name() != "test_tool" {
+		t.Errorf("Expected tool name 'test_tool', got '%s'", tool.Name())
+	}
+
+	// Check tool was registered with adapter
+	adapterTools := adapter.ListTools()
+	if len(adapterTools) != 1 {
+		t.Errorf("Expected 1 tool in adapter, got %d", len(adapterTools))
+	}
+
+	// Unregister should remove from adapter
+	err = registry.Unregister("test_tool")
+	if err != nil {
+		t.Fatalf("Expected no error unregistering tool, got: %v", err)
+	}
+
+	// Check tool was removed from adapter
+	adapterTools = adapter.ListTools()
+	if len(adapterTools) != 0 {
+		t.Errorf("Expected 0 tools in adapter after unregister, got %d", len(adapterTools))
+	}
+
+	// Stop registry should stop adapter
+	err = registry.Stop(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error stopping registry, got: %v", err)
+	}
+
+	if adapter.IsRunning() {
+		t.Error("Expected adapter to be stopped after registry stop")
+	}
+}
+
+// Test adapter failure handling business logic
+func TestDefaultToolRegistry_AdapterFailureHandling(t *testing.T) {
+	adapter := newMockAdapter()
+	registry := createTestRegistryWithAdapter(adapter)
+	ctx := context.Background()
+
+	// Test start failure
+	adapter.startError = fmt.Errorf("adapter start failed")
+	err := registry.Start(ctx)
+	if err == nil {
+		t.Error("Expected error when adapter start fails")
+	}
+
+	// Reset for successful start
+	adapter.startError = nil
+	err = registry.Start(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error on successful start, got: %v", err)
+	}
+
+	// Test registration with adapter failure - should continue with local registration
+	adapter.registerError = fmt.Errorf("adapter register failed")
+	factory := createTestFactory("test_tool")
+	err = registry.Register("test_tool", factory)
+	if err != nil {
+		t.Fatalf("Expected no error registering tool, got: %v", err)
+	}
+
+	// Tool should still be gettable even if adapter registration failed
+	tool, err := registry.Get("test_tool")
+	if err != nil {
+		t.Fatalf("Expected to get tool even after adapter registration failure, got: %v", err)
+	}
+
+	if tool.Name() != "test_tool" {
+		t.Errorf("Expected tool name 'test_tool', got '%s'", tool.Name())
+	}
+
+	// Reset adapter error for unregistration test
+	adapter.registerError = nil
+	adapter.unregisterError = fmt.Errorf("adapter unregister failed")
+
+	// Unregister should succeed locally even if adapter fails
+	err = registry.Unregister("test_tool")
+	if err != nil {
+		t.Fatalf("Expected no error unregistering tool even with adapter failure, got: %v", err)
+	}
+
+	// Tool should be gone from registry
+	_, err = registry.Get("test_tool")
+	if err == nil {
+		t.Error("Expected error getting unregistered tool")
+	}
+}
+
+// Test health integration with adapter
+func TestDefaultToolRegistry_HealthWithAdapter(t *testing.T) {
+	adapter := newMockAdapter()
+	registry := createTestRegistryWithAdapter(adapter)
+	ctx := context.Background()
+
+	// Start registry
+	err := registry.Start(ctx)
+	if err != nil {
+		t.Fatalf("Expected no error starting registry, got: %v", err)
+	}
+
+	// Test healthy adapter
+	health := registry.Health()
+	if health.Status != "healthy" {
+		t.Errorf("Expected healthy status with healthy adapter, got '%s'", health.Status)
+	}
+
+	// Test degraded adapter
+	adapter.healthStatus = "degraded"
+	health = registry.Health()
+	if health.Status != "degraded" {
+		t.Errorf("Expected degraded status with degraded adapter, got '%s'", health.Status)
+	}
+
+	if len(health.Errors) == 0 {
+		t.Error("Expected errors in health when adapter is degraded")
 	}
 }
