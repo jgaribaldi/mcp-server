@@ -9,6 +9,7 @@ import (
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/tools/adapters"
 )
 
 // DefaultToolRegistry implements ToolRegistry
@@ -19,6 +20,7 @@ type DefaultToolRegistry struct {
 	logger    *logger.Logger
 	config    *config.Config
 	validator *ToolValidator
+	adapter   adapters.LibraryAdapter // Library adapter for MCP implementation
 	mu        sync.RWMutex
 	running   bool
 	lastCheck time.Time
@@ -33,6 +35,20 @@ func NewDefaultToolRegistry(cfg *config.Config, log *logger.Logger) ToolRegistry
 		logger:    log,
 		config:    cfg,
 		validator: NewToolValidator(cfg, log),
+		adapter:   nil, // No adapter for backward compatibility
+	}
+}
+
+// NewDefaultToolRegistryWithAdapter creates a new tool registry instance with a library adapter
+func NewDefaultToolRegistryWithAdapter(cfg *config.Config, log *logger.Logger, adapter adapters.LibraryAdapter) ToolRegistry {
+	return &DefaultToolRegistry{
+		factories: make(map[string]ToolFactory),
+		tools:     make(map[string]mcp.Tool),
+		toolInfo:  make(map[string]ToolInfo),
+		logger:    log,
+		config:    cfg,
+		validator: NewToolValidator(cfg, log),
+		adapter:   adapter,
 	}
 }
 
