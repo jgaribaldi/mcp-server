@@ -72,6 +72,7 @@ type ToolRegistry interface {
 	LoadTools(ctx context.Context) error
 	ValidateTools(ctx context.Context) error
 	TransitionStatus(name string, newStatus ToolStatus) error
+	RestartTool(ctx context.Context, name string) error
 
 	// Registry operations
 	Start(ctx context.Context) error
@@ -89,6 +90,8 @@ var (
 	ErrToolCreation        = fmt.Errorf("tool creation failed")
 	ErrInvalidTransition   = fmt.Errorf("invalid status transition")
 	ErrTransitionNotAllowed = fmt.Errorf("status transition not allowed")
+	ErrToolRestart         = fmt.Errorf("tool restart failed")
+	ErrRestartNotAllowed   = fmt.Errorf("tool restart not allowed")
 )
 
 // ToolValidationError represents a validation error with details

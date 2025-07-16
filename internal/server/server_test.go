@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -51,6 +52,20 @@ func (m *MockToolRegistry) TransitionStatus(name string, newStatus tools.ToolSta
 	for i, tool := range m.toolList {
 		if tool.Name == name {
 			m.toolList[i].Status = newStatus
+			return nil
+		}
+	}
+	return tools.ErrToolNotFound
+}
+
+func (m *MockToolRegistry) RestartTool(ctx context.Context, name string) error {
+	for i, tool := range m.toolList {
+		if tool.Name == name {
+			// Check if restart is allowed from current status
+			if !tools.IsValidTransition(tool.Status, tools.ToolStatusRegistered) {
+				return tools.ErrRestartNotAllowed
+			}
+			m.toolList[i].Status = tools.ToolStatusLoaded
 			return nil
 		}
 	}
@@ -541,5 +556,131 @@ func TestGetAllowedTransitions(t *testing.T) {
 					string(tt.from), expectedMap)
 			}
 		})
+	}
+}
+
+func TestRestartTool(t *testing.T) {
+	tests := []struct {
+		name                string
+		toolName           string
+		initialStatus      tools.ToolStatus
+		expectedFinalStatus tools.ToolStatus
+		expectError        bool
+		expectedError      error
+	}{
+		{
+			name:                "restart from error status",
+			toolName:           "test-tool",
+			initialStatus:      tools.ToolStatusError,
+			expectedFinalStatus: tools.ToolStatusLoaded,
+			expectError:        false,
+		},
+		{
+			name:                "restart from disabled status", 
+			toolName:           "test-tool",
+			initialStatus:      tools.ToolStatusDisabled,
+			expectedFinalStatus: tools.ToolStatusLoaded,
+			expectError:        false,
+		},
+		{
+			name:          "restart non-existent tool",
+			toolName:     "non-existent",
+			initialStatus: tools.ToolStatusError,
+			expectError:   true,
+			expectedError: tools.ErrToolNotFound,
+		},
+		{
+			name:          "restart from invalid status",
+			toolName:     "test-tool",
+			initialStatus: tools.ToolStatusActive,
+			expectError:   true,
+			expectedError: tools.ErrRestartNotAllowed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := createTestServer()
+			
+			if tt.toolName == "test-tool" {
+				server.registry = &MockToolRegistry{
+					toolList: []tools.ToolInfo{
+						{
+							Name:   tt.toolName,
+							Status: tt.initialStatus,
+						},
+					},
+				}
+			} else {
+				server.registry = &MockToolRegistry{
+					toolList: []tools.ToolInfo{},
+				}
+			}
+
+			err := server.registry.RestartTool(context.Background(), tt.toolName)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+					return
+				}
+				if tt.expectedError != nil && !errors.Is(err, tt.expectedError) {
+					t.Errorf("expected error %v, got %v", tt.expectedError, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+					return
+				}
+
+				// Check final status for successful restarts
+				toolList := server.registry.List()
+				found := false
+				for _, tool := range toolList {
+					if tool.Name == tt.toolName {
+						found = true
+						if tool.Status != tt.expectedFinalStatus {
+							t.Errorf("expected final status %s, got %s", 
+								string(tt.expectedFinalStatus), string(tool.Status))
+						}
+						break
+					}
+				}
+				if !found {
+					t.Errorf("tool %s not found after restart", tt.toolName)
+				}
+			}
+		})
+	}
+}
+
+func TestRestartToolStatusTransitions(t *testing.T) {
+	server := createTestServer()
+	
+	mockRegistry := &MockToolRegistry{
+		toolList: []tools.ToolInfo{
+			{
+				Name:   "test-tool",
+				Status: tools.ToolStatusError,
+			},
+		},
+	}
+	
+	server.registry = mockRegistry
+
+	err := server.registry.RestartTool(context.Background(), "test-tool")
+	if err != nil {
+		t.Fatalf("unexpected error during restart: %v", err)
+	}
+
+	toolList := server.registry.List()
+	for _, tool := range toolList {
+		if tool.Name == "test-tool" {
+			if tool.Status != tools.ToolStatusLoaded {
+				t.Errorf("expected final status %s, got %s", 
+					string(tools.ToolStatusLoaded), string(tool.Status))
+			}
+			break
+		}
 	}
 }

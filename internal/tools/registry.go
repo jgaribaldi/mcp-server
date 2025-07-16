@@ -543,6 +543,142 @@ func (r *DefaultToolRegistry) TransitionStatus(name string, newStatus ToolStatus
 	return nil
 }
 
+// Restart validation functions
+
+func (r *DefaultToolRegistry) validateRestartPreconditions(name string) (ToolInfo, ToolFactory, error) {
+	info, exists := r.toolInfo[name]
+	if !exists {
+		r.logger.Error("attempted to restart non-existent tool", "name", name)
+		return ToolInfo{}, nil, fmt.Errorf("%w: %s", ErrToolNotFound, name)
+	}
+
+	if !IsValidTransition(info.Status, ToolStatusRegistered) {
+		r.logger.Error("tool restart not allowed from current status",
+			"name", name, "current_status", string(info.Status))
+		return ToolInfo{}, nil, fmt.Errorf("%w: cannot restart tool from status %s", 
+			ErrRestartNotAllowed, string(info.Status))
+	}
+
+	if !r.running {
+		r.logger.Error("cannot restart tool when registry is not running", "name", name)
+		return ToolInfo{}, nil, fmt.Errorf("%w: cannot restart tool when registry is stopped", 
+			ErrRegistryNotRunning)
+	}
+
+	factory, exists := r.factories[name]
+	if !exists {
+		r.logger.Error("tool factory not found for restart", "name", name)
+		return ToolInfo{}, nil, fmt.Errorf("%w: factory not found for tool %s", ErrToolNotFound, name)
+	}
+
+	return info, factory, nil
+}
+
+// Tool management functions
+
+func (r *DefaultToolRegistry) cleanupExistingTool(name string) {
+	if _, exists := r.tools[name]; exists {
+		delete(r.tools, name)
+		r.logger.Debug("removed existing tool instance for restart", "name", name)
+	}
+}
+
+func (r *DefaultToolRegistry) createToolInstance(ctx context.Context, factory ToolFactory) (mcp.Tool, error) {
+	toolConfig := ToolConfig{
+		Enabled:    true,
+		Config:     make(map[string]interface{}),
+		Timeout:    30,
+		MaxRetries: 3,
+	}
+	return factory.Create(ctx, toolConfig)
+}
+
+func (r *DefaultToolRegistry) registerToolWithAdapter(tool mcp.Tool, name string) {
+	if r.adapter != nil {
+		if err := r.adapter.RegisterTool(tool); err != nil {
+			r.logger.Error("failed to register restarted tool with adapter",
+				"name", name, "error", err)
+		}
+	}
+}
+
+// Status management functions
+
+func (r *DefaultToolRegistry) transitionToRegistered(name string) error {
+	if info, exists := r.toolInfo[name]; exists {
+		info.Status = ToolStatusRegistered
+		r.toolInfo[name] = info
+		r.logger.Info("tool transitioned to registered status for restart", "name", name)
+	}
+	return nil
+}
+
+func (r *DefaultToolRegistry) transitionToLoaded(name string) error {
+	if info, exists := r.toolInfo[name]; exists && IsValidTransition(info.Status, ToolStatusLoaded) {
+		info.Status = ToolStatusLoaded
+		r.toolInfo[name] = info
+	}
+	return nil
+}
+
+func (r *DefaultToolRegistry) transitionToError(name string) error {
+	if info, exists := r.toolInfo[name]; exists && IsValidTransition(info.Status, ToolStatusError) {
+		info.Status = ToolStatusError
+		r.toolInfo[name] = info
+	}
+	return nil
+}
+
+// Core restart orchestration
+
+func (r *DefaultToolRegistry) restartToolCore(ctx context.Context, name string, factory ToolFactory) error {
+	r.cleanupExistingTool(name)
+	
+	if err := r.transitionToRegistered(name); err != nil {
+		return err
+	}
+
+	tool, err := r.createToolInstance(ctx, factory)
+	if err != nil {
+		r.logger.Error("tool recreation failed during restart", "name", name, "error", err)
+		r.transitionToError(name)
+		return fmt.Errorf("%w: failed to recreate tool %s: %v", ErrToolRestart, name, err)
+	}
+
+	if err := r.validator.ValidateTool(tool); err != nil {
+		r.logger.Error("tool validation failed during restart", "name", name, "error", err)
+		r.transitionToError(name)
+		return fmt.Errorf("%w: tool validation failed for %s: %v", ErrToolRestart, name, err)
+	}
+
+	r.registerToolWithAdapter(tool, name)
+	r.tools[name] = tool
+	
+	return r.transitionToLoaded(name)
+}
+
+// RestartTool implements ToolRegistry.RestartTool
+func (r *DefaultToolRegistry) RestartTool(ctx context.Context, name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.logger.Info("restarting tool", "name", name)
+
+	info, factory, err := r.validateRestartPreconditions(name)
+	if err != nil {
+		return err
+	}
+
+	if err := r.restartToolCore(ctx, name, factory); err != nil {
+		return err
+	}
+
+	r.logger.Info("tool restart completed successfully",
+		"name", name, "status", string(info.Status))
+
+	return nil
+}
+
 // Health implements ToolRegistry.Health
 func (r *DefaultToolRegistry) Health() RegistryHealth {
 	r.mu.RLock()
