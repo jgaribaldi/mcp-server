@@ -14,41 +14,44 @@ import (
 
 // DefaultToolRegistry implements ToolRegistry
 type DefaultToolRegistry struct {
-	factories map[string]ToolFactory
-	tools     map[string]mcp.Tool
-	toolInfo  map[string]ToolInfo
-	logger    *logger.Logger
-	config    *config.Config
-	validator *ToolValidator
-	adapter   adapters.LibraryAdapter // Library adapter for MCP implementation
-	mu        sync.RWMutex
-	running   bool
-	lastCheck time.Time
+	factories        map[string]ToolFactory
+	circuitFactories map[string]*CircuitBreakerToolFactory
+	tools            map[string]mcp.Tool
+	toolInfo         map[string]ToolInfo
+	logger           *logger.Logger
+	config           *config.Config
+	validator        *ToolValidator
+	adapter          adapters.LibraryAdapter // Library adapter for MCP implementation
+	mu               sync.RWMutex
+	running          bool
+	lastCheck        time.Time
 }
 
 // NewDefaultToolRegistry creates a new tool registry instance
 func NewDefaultToolRegistry(cfg *config.Config, log *logger.Logger) ToolRegistry {
 	return &DefaultToolRegistry{
-		factories: make(map[string]ToolFactory),
-		tools:     make(map[string]mcp.Tool),
-		toolInfo:  make(map[string]ToolInfo),
-		logger:    log,
-		config:    cfg,
-		validator: NewToolValidator(cfg, log),
-		adapter:   nil, // No adapter for backward compatibility
+		factories:        make(map[string]ToolFactory),
+		circuitFactories: make(map[string]*CircuitBreakerToolFactory),
+		tools:            make(map[string]mcp.Tool),
+		toolInfo:         make(map[string]ToolInfo),
+		logger:           log,
+		config:           cfg,
+		validator:        NewToolValidator(cfg, log),
+		adapter:          nil, // No adapter for backward compatibility
 	}
 }
 
 // NewDefaultToolRegistryWithAdapter creates a new tool registry instance with a library adapter
 func NewDefaultToolRegistryWithAdapter(cfg *config.Config, log *logger.Logger, adapter adapters.LibraryAdapter) ToolRegistry {
 	return &DefaultToolRegistry{
-		factories: make(map[string]ToolFactory),
-		tools:     make(map[string]mcp.Tool),
-		toolInfo:  make(map[string]ToolInfo),
-		logger:    log,
-		config:    cfg,
-		validator: NewToolValidator(cfg, log),
-		adapter:   adapter,
+		factories:        make(map[string]ToolFactory),
+		circuitFactories: make(map[string]*CircuitBreakerToolFactory),
+		tools:            make(map[string]mcp.Tool),
+		toolInfo:         make(map[string]ToolInfo),
+		logger:           log,
+		config:           cfg,
+		validator:        NewToolValidator(cfg, log),
+		adapter:          adapter,
 	}
 }
 
@@ -91,6 +94,11 @@ func (r *DefaultToolRegistry) Register(name string, factory ToolFactory) error {
 
 	// Register factory
 	r.factories[name] = factory
+
+	// Create circuit breaker wrapper
+	circuitConfig := DefaultCircuitBreakerConfig()
+	circuitFactory := NewCircuitBreakerToolFactory(factory, circuitConfig)
+	r.circuitFactories[name] = circuitFactory
 
 	// Create tool info
 	info := ToolInfo{
