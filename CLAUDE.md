@@ -425,6 +425,13 @@ git init
 - Security and production readiness are built in, not added later
 - **Traceability**: Every commit references its corresponding specification
 
+**Commit Message Guidelines:**
+- **No External Tool References**: Commit messages must NOT contain any references to AI tools, code assistants, or automated code generation tools
+- **Clean Attribution**: Do not include "Generated with", "Co-Authored-By", or similar automated tool attributions
+- **Professional Tone**: Use clear, descriptive commit messages that focus on the technical changes made
+- **Standard Format**: Follow conventional commit format with clear summary and detailed description
+- **Human Authorship**: All commits should appear as if written by human developers
+
 ## Maintenance and Operations
 
 ### Logging Configuration
