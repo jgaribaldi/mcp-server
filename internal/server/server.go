@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime"
 	"time"
 
 	"mcp-server/internal/config"
@@ -29,6 +30,54 @@ type ReadyResponse struct {
 	Version   string `json:"version"`
 }
 
+// MetricsResponse represents registry metrics information
+type MetricsResponse struct {
+	Status           string            `json:"status"`
+	Timestamp        string            `json:"timestamp"`
+	Registry         RegistryMetrics   `json:"registry"`
+	Adapter          AdapterMetrics    `json:"adapter"`
+	Tools            ToolMetrics       `json:"tools"`
+	Performance      PerformanceMetrics `json:"performance"`
+}
+
+// RegistryMetrics represents registry-specific metrics
+type RegistryMetrics struct {
+	TotalTools       int     `json:"total_tools"`
+	ActiveTools      int     `json:"active_tools"`
+	ErrorTools       int     `json:"error_tools"`
+	LoadedTools      int     `json:"loaded_tools"`
+	RegisteredTools  int     `json:"registered_tools"`
+	SuccessRate      float64 `json:"success_rate"`
+	ErrorRate        float64 `json:"error_rate"`
+	UptimeSeconds    int64   `json:"uptime_seconds"`
+}
+
+// AdapterMetrics represents adapter-specific metrics
+type AdapterMetrics struct {
+	Library         string  `json:"library"`
+	Version         string  `json:"version"`
+	Running         bool    `json:"running"`
+	ToolCount       int     `json:"tool_count"`
+	ResourceCount   int     `json:"resource_count"`
+	SuccessRate     float64 `json:"success_rate"`
+}
+
+// ToolMetrics represents tool execution metrics
+type ToolMetrics struct {
+	TotalExecutions int64   `json:"total_executions"`
+	SuccessfulRuns  int64   `json:"successful_runs"`
+	FailedRuns      int64   `json:"failed_runs"`
+	AverageLatency  float64 `json:"average_latency_ms"`
+}
+
+// PerformanceMetrics represents performance statistics
+type PerformanceMetrics struct {
+	RequestsPerSecond float64 `json:"requests_per_second"`
+	P95LatencyMs      float64 `json:"p95_latency_ms"`
+	P99LatencyMs      float64 `json:"p99_latency_ms"`
+	MemoryUsageMB     float64 `json:"memory_usage_mb"`
+}
+
 // Server represents the HTTP server
 type Server struct {
 	httpServer *http.Server
@@ -37,6 +86,7 @@ type Server struct {
 	logger     *logger.Logger
 	config     *config.Config
 	mux        *http.ServeMux
+	startTime  time.Time
 }
 
 // New creates a new HTTP server instance
@@ -65,6 +115,7 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 		mux:       mux,
 		mcpServer: mcpSrv,
 		registry:  registry,
+		startTime: time.Now(),
 		httpServer: &http.Server{
 			Addr:           fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 			Handler:        mux,
@@ -85,6 +136,7 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
+	s.mux.HandleFunc("/metrics", s.handleMetrics)
 }
 
 // handleHealth handles health check requests
@@ -234,4 +286,155 @@ func (s *Server) IsMCPRunning() bool {
 	// This is a simple implementation - in a real scenario we might need
 	// to track the running state more carefully
 	return s.mcpServer != nil
+}
+
+// Data Collection Functions - Single responsibility: gather raw data
+
+// collectRegistryData gathers registry health and tool information
+func (s *Server) collectRegistryData() (tools.RegistryHealth, []tools.ToolInfo) {
+	return s.registry.Health(), s.registry.List()
+}
+
+// collectPerformanceData gathers runtime performance statistics
+func (s *Server) collectPerformanceData() runtime.MemStats {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	return memStats
+}
+
+// collectUptimeData calculates server uptime
+func (s *Server) collectUptimeData() time.Duration {
+	return time.Since(s.startTime)
+}
+
+// Metrics Calculation Functions - Single responsibility: calculate specific metrics
+
+// calculateRegistryMetrics computes registry-specific metrics
+func (s *Server) calculateRegistryMetrics(health tools.RegistryHealth, toolList []tools.ToolInfo, uptime time.Duration) RegistryMetrics {
+	var successRate, errorRate float64
+	if health.ToolCount > 0 {
+		successRate = float64(health.ActiveTools) / float64(health.ToolCount) * 100.0
+		errorRate = float64(health.ErrorTools) / float64(health.ToolCount) * 100.0
+	}
+	
+	loadedTools := 0
+	registeredTools := 0
+	for _, tool := range toolList {
+		switch tool.Status {
+		case "loaded":
+			loadedTools++
+		case "registered":
+			registeredTools++
+		}
+	}
+	
+	return RegistryMetrics{
+		TotalTools:      health.ToolCount,
+		ActiveTools:     health.ActiveTools,
+		ErrorTools:      health.ErrorTools,
+		LoadedTools:     loadedTools,
+		RegisteredTools: registeredTools,
+		SuccessRate:     successRate,
+		ErrorRate:       errorRate,
+		UptimeSeconds:   int64(uptime.Seconds()),
+	}
+}
+
+// calculateAdapterMetrics computes adapter-specific metrics
+func (s *Server) calculateAdapterMetrics(health tools.RegistryHealth, successRate float64) AdapterMetrics {
+	return AdapterMetrics{
+		Library:       "mark3labs",
+		Version:       "0.33.0",
+		Running:       true,
+		ToolCount:     health.ToolCount,
+		ResourceCount: 0, // No resources tracked yet
+		SuccessRate:   successRate,
+	}
+}
+
+// calculateToolMetrics computes tool execution metrics
+func (s *Server) calculateToolMetrics(health tools.RegistryHealth) ToolMetrics {
+	return ToolMetrics{
+		TotalExecutions: 0,
+		SuccessfulRuns:  0,
+		FailedRuns:      int64(health.ErrorTools),
+		AverageLatency:  0.0,
+	}
+}
+
+// calculatePerformanceMetrics computes performance statistics
+func (s *Server) calculatePerformanceMetrics(memStats runtime.MemStats) PerformanceMetrics {
+	memoryUsageMB := float64(memStats.Alloc) / 1024 / 1024
+	
+	return PerformanceMetrics{
+		RequestsPerSecond: 0.0,
+		P95LatencyMs:      0.0,
+		P99LatencyMs:      0.0,
+		MemoryUsageMB:     memoryUsageMB,
+	}
+}
+
+// determineOverallHealth determines overall server health status
+func (s *Server) determineOverallHealth(registryHealth tools.RegistryHealth) string {
+	if registryHealth.Status == "stopped" {
+		return "degraded"
+	}
+	if registryHealth.Status == "degraded" || registryHealth.ErrorTools > 0 {
+		return "degraded"
+	}
+	return "healthy"
+}
+
+// Business Logic Function - Single responsibility: orchestrate and build response
+
+// buildMetricsResponse collects data and constructs the complete metrics response
+func (s *Server) buildMetricsResponse() MetricsResponse {
+	registryHealth, toolList := s.collectRegistryData()
+	memStats := s.collectPerformanceData()
+	uptime := s.collectUptimeData()
+	
+	registryMetrics := s.calculateRegistryMetrics(registryHealth, toolList, uptime)
+	adapterMetrics := s.calculateAdapterMetrics(registryHealth, registryMetrics.SuccessRate)
+	toolMetrics := s.calculateToolMetrics(registryHealth)
+	perfMetrics := s.calculatePerformanceMetrics(memStats)
+	
+	return MetricsResponse{
+		Status:      s.determineOverallHealth(registryHealth),
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Registry:    registryMetrics,
+		Adapter:     adapterMetrics,
+		Tools:       toolMetrics,
+		Performance: perfMetrics,
+	}
+}
+
+// HTTP Handler Function - Single responsibility: HTTP request/response handling
+
+// handleMetrics handles metrics endpoint requests
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("metrics requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	response := s.buildMetricsResponse()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal metrics response", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("metrics request completed successfully",
+		"status", response.Status,
+		"uptime_seconds", response.Registry.UptimeSeconds,
+		"memory_mb", response.Performance.MemoryUsageMB,
+	)
 }
