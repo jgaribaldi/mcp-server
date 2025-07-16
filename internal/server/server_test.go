@@ -47,6 +47,16 @@ func (m *MockToolRegistry) ValidateTools(ctx context.Context) error {
 	return nil
 }
 
+func (m *MockToolRegistry) TransitionStatus(name string, newStatus tools.ToolStatus) error {
+	for i, tool := range m.toolList {
+		if tool.Name == name {
+			m.toolList[i].Status = newStatus
+			return nil
+		}
+	}
+	return tools.ErrToolNotFound
+}
+
 func (m *MockToolRegistry) Start(ctx context.Context) error {
 	return nil
 }
@@ -398,6 +408,137 @@ func TestDetermineToolsOverallHealth(t *testing.T) {
 			result := server.determineToolsOverallHealth(tt.summary, tt.registryHealth)
 			if result != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestIsValidTransition(t *testing.T) {
+	tests := []struct {
+		name     string
+		from     tools.ToolStatus
+		to       tools.ToolStatus
+		expected bool
+	}{
+		{"same status", tools.ToolStatusActive, tools.ToolStatusActive, true},
+		{"registered to loaded", tools.ToolStatusRegistered, tools.ToolStatusLoaded, true},
+		{"registered to error", tools.ToolStatusRegistered, tools.ToolStatusError, true},
+		{"registered to disabled", tools.ToolStatusRegistered, tools.ToolStatusDisabled, true},
+		{"loaded to active", tools.ToolStatusLoaded, tools.ToolStatusActive, true},
+		{"loaded to error", tools.ToolStatusLoaded, tools.ToolStatusError, true},
+		{"loaded to disabled", tools.ToolStatusLoaded, tools.ToolStatusDisabled, true},
+		{"active to error", tools.ToolStatusActive, tools.ToolStatusError, true},
+		{"active to disabled", tools.ToolStatusActive, tools.ToolStatusDisabled, true},
+		{"active to loaded", tools.ToolStatusActive, tools.ToolStatusLoaded, true},
+		{"error to registered", tools.ToolStatusError, tools.ToolStatusRegistered, true},
+		{"error to disabled", tools.ToolStatusError, tools.ToolStatusDisabled, true},
+		{"disabled to registered", tools.ToolStatusDisabled, tools.ToolStatusRegistered, true},
+		{"disabled to error", tools.ToolStatusDisabled, tools.ToolStatusError, true},
+		{"invalid: registered to active", tools.ToolStatusRegistered, tools.ToolStatusActive, false},
+		{"invalid: loaded to registered", tools.ToolStatusLoaded, tools.ToolStatusRegistered, false},
+		{"invalid: active to registered", tools.ToolStatusActive, tools.ToolStatusRegistered, false},
+		{"invalid: error to loaded", tools.ToolStatusError, tools.ToolStatusLoaded, false},
+		{"invalid: error to active", tools.ToolStatusError, tools.ToolStatusActive, false},
+		{"invalid: disabled to loaded", tools.ToolStatusDisabled, tools.ToolStatusLoaded, false},
+		{"invalid: disabled to active", tools.ToolStatusDisabled, tools.ToolStatusActive, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tools.IsValidTransition(tt.from, tt.to)
+			if result != tt.expected {
+				t.Errorf("IsValidTransition(%s, %s) = %v, expected %v", 
+					string(tt.from), string(tt.to), result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetAllowedTransitions(t *testing.T) {
+	tests := []struct {
+		name     string
+		from     tools.ToolStatus
+		expected []tools.ToolStatus
+	}{
+		{
+			name: "from registered",
+			from: tools.ToolStatusRegistered,
+			expected: []tools.ToolStatus{
+				tools.ToolStatusRegistered,
+				tools.ToolStatusLoaded,
+				tools.ToolStatusError,
+				tools.ToolStatusDisabled,
+			},
+		},
+		{
+			name: "from loaded",
+			from: tools.ToolStatusLoaded,
+			expected: []tools.ToolStatus{
+				tools.ToolStatusLoaded,
+				tools.ToolStatusActive,
+				tools.ToolStatusError,
+				tools.ToolStatusDisabled,
+			},
+		},
+		{
+			name: "from active",
+			from: tools.ToolStatusActive,
+			expected: []tools.ToolStatus{
+				tools.ToolStatusActive,
+				tools.ToolStatusError,
+				tools.ToolStatusDisabled,
+				tools.ToolStatusLoaded,
+			},
+		},
+		{
+			name: "from error",
+			from: tools.ToolStatusError,
+			expected: []tools.ToolStatus{
+				tools.ToolStatusError,
+				tools.ToolStatusRegistered,
+				tools.ToolStatusDisabled,
+			},
+		},
+		{
+			name: "from disabled",
+			from: tools.ToolStatusDisabled,
+			expected: []tools.ToolStatus{
+				tools.ToolStatusDisabled,
+				tools.ToolStatusRegistered,
+				tools.ToolStatusError,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tools.GetAllowedTransitions(tt.from)
+			
+			if len(result) != len(tt.expected) {
+				t.Errorf("GetAllowedTransitions(%s) returned %d statuses, expected %d",
+					string(tt.from), len(result), len(tt.expected))
+				t.Errorf("Got: %v", result)
+				t.Errorf("Expected: %v", tt.expected)
+				return
+			}
+
+			// Check all expected statuses are present
+			expectedMap := make(map[tools.ToolStatus]bool)
+			for _, status := range tt.expected {
+				expectedMap[status] = true
+			}
+
+			for _, status := range result {
+				if !expectedMap[status] {
+					t.Errorf("GetAllowedTransitions(%s) contains unexpected status: %s",
+						string(tt.from), string(status))
+				}
+				delete(expectedMap, status)
+			}
+
+			if len(expectedMap) > 0 {
+				t.Errorf("GetAllowedTransitions(%s) missing expected statuses: %v",
+					string(tt.from), expectedMap)
 			}
 		})
 	}

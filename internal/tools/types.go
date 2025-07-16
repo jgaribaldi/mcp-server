@@ -71,6 +71,7 @@ type ToolRegistry interface {
 	// Tool lifecycle
 	LoadTools(ctx context.Context) error
 	ValidateTools(ctx context.Context) error
+	TransitionStatus(name string, newStatus ToolStatus) error
 
 	// Registry operations
 	Start(ctx context.Context) error
@@ -80,12 +81,14 @@ type ToolRegistry interface {
 
 // Tool registry errors
 var (
-	ErrToolNotFound      = fmt.Errorf("tool not found")
-	ErrToolAlreadyExists = fmt.Errorf("tool already exists")
-	ErrInvalidToolName   = fmt.Errorf("invalid tool name")
-	ErrToolValidation    = fmt.Errorf("tool validation failed")
-	ErrRegistryNotRunning = fmt.Errorf("registry not running")
-	ErrToolCreation      = fmt.Errorf("tool creation failed")
+	ErrToolNotFound        = fmt.Errorf("tool not found")
+	ErrToolAlreadyExists   = fmt.Errorf("tool already exists")
+	ErrInvalidToolName     = fmt.Errorf("invalid tool name")
+	ErrToolValidation      = fmt.Errorf("tool validation failed")
+	ErrRegistryNotRunning  = fmt.Errorf("registry not running")
+	ErrToolCreation        = fmt.Errorf("tool creation failed")
+	ErrInvalidTransition   = fmt.Errorf("invalid status transition")
+	ErrTransitionNotAllowed = fmt.Errorf("status transition not allowed")
 )
 
 // ToolValidationError represents a validation error with details
@@ -97,6 +100,63 @@ type ToolValidationError struct {
 
 func (e ToolValidationError) Error() string {
 	return fmt.Sprintf("validation error in field '%s' (value: '%s'): %s", e.Field, e.Value, e.Message)
+}
+
+// StatusTransition represents a valid status transition
+type StatusTransition struct {
+	From ToolStatus
+	To   ToolStatus
+}
+
+// ValidStatusTransitions defines the allowed status transitions
+var ValidStatusTransitions = map[StatusTransition]bool{
+	// From registered
+	{ToolStatusRegistered, ToolStatusLoaded}:   true,
+	{ToolStatusRegistered, ToolStatusError}:    true,
+	{ToolStatusRegistered, ToolStatusDisabled}: true,
+	
+	// From loaded
+	{ToolStatusLoaded, ToolStatusActive}:   true,
+	{ToolStatusLoaded, ToolStatusError}:    true,
+	{ToolStatusLoaded, ToolStatusDisabled}: true,
+	
+	// From active
+	{ToolStatusActive, ToolStatusError}:    true,
+	{ToolStatusActive, ToolStatusDisabled}: true,
+	{ToolStatusActive, ToolStatusLoaded}:   true, // downgrade
+	
+	// From error
+	{ToolStatusError, ToolStatusRegistered}: true, // restart
+	{ToolStatusError, ToolStatusDisabled}:   true,
+	
+	// From disabled
+	{ToolStatusDisabled, ToolStatusRegistered}: true, // enable
+	{ToolStatusDisabled, ToolStatusError}:      true,
+}
+
+// IsValidTransition checks if a status transition is allowed
+func IsValidTransition(from, to ToolStatus) bool {
+	if from == to {
+		return true // same status is always valid
+	}
+	return ValidStatusTransitions[StatusTransition{From: from, To: to}]
+}
+
+// GetAllowedTransitions returns all valid transitions from a given status
+func GetAllowedTransitions(from ToolStatus) []ToolStatus {
+	var allowed []ToolStatus
+	
+	// Same status is always allowed
+	allowed = append(allowed, from)
+	
+	// Check all possible transitions
+	for transition := range ValidStatusTransitions {
+		if transition.From == from {
+			allowed = append(allowed, transition.To)
+		}
+	}
+	
+	return allowed
 }
 
 // ToolValidationErrors represents multiple validation errors

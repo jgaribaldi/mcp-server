@@ -210,10 +210,12 @@ func (r *DefaultToolRegistry) Get(name string) (mcp.Tool, error) {
 	r.mu.Lock()
 	r.tools[name] = tool
 	
-	// Update status
+	// Update status using transition logic
 	if info, exists := r.toolInfo[name]; exists {
-		info.Status = ToolStatusLoaded
-		r.toolInfo[name] = info
+		if IsValidTransition(info.Status, ToolStatusLoaded) {
+			info.Status = ToolStatusLoaded
+			r.toolInfo[name] = info
+		}
 	}
 	r.mu.Unlock()
 
@@ -285,11 +287,13 @@ func (r *DefaultToolRegistry) LoadTools(ctx context.Context) error {
 				"error", err,
 			)
 
-			// Update status to error
+			// Update status to error using transition logic
 			r.mu.Lock()
 			if info, exists := r.toolInfo[name]; exists {
-				info.Status = ToolStatusError
-				r.toolInfo[name] = info
+				if IsValidTransition(info.Status, ToolStatusError) {
+					info.Status = ToolStatusError
+					r.toolInfo[name] = info
+				}
 			}
 			r.mu.Unlock()
 			continue
@@ -304,11 +308,13 @@ func (r *DefaultToolRegistry) LoadTools(ctx context.Context) error {
 				"error", err,
 			)
 
-			// Update status to error
+			// Update status to error using transition logic
 			r.mu.Lock()
 			if info, exists := r.toolInfo[name]; exists {
-				info.Status = ToolStatusError
-				r.toolInfo[name] = info
+				if IsValidTransition(info.Status, ToolStatusError) {
+					info.Status = ToolStatusError
+					r.toolInfo[name] = info
+				}
 			}
 			r.mu.Unlock()
 			continue
@@ -366,19 +372,23 @@ func (r *DefaultToolRegistry) ValidateTools(ctx context.Context) error {
 				"error", err,
 			)
 
-			// Update status to error
+			// Update status to error using transition logic
 			r.mu.Lock()
 			if info, exists := r.toolInfo[name]; exists {
-				info.Status = ToolStatusError
-				r.toolInfo[name] = info
+				if IsValidTransition(info.Status, ToolStatusError) {
+					info.Status = ToolStatusError
+					r.toolInfo[name] = info
+				}
 			}
 			r.mu.Unlock()
 		} else {
-			// Update status to active
+			// Update status to active using transition logic
 			r.mu.Lock()
 			if info, exists := r.toolInfo[name]; exists {
-				info.Status = ToolStatusActive
-				r.toolInfo[name] = info
+				if IsValidTransition(info.Status, ToolStatusActive) {
+					info.Status = ToolStatusActive
+					r.toolInfo[name] = info
+				}
 			}
 			r.mu.Unlock()
 		}
@@ -447,15 +457,89 @@ func (r *DefaultToolRegistry) Stop(ctx context.Context) error {
 	// Clear all tools
 	r.tools = make(map[string]mcp.Tool)
 	
-	// Update all statuses to disabled
+	// Update all statuses to disabled using transition logic
 	for name, info := range r.toolInfo {
-		info.Status = ToolStatusDisabled
-		r.toolInfo[name] = info
+		if IsValidTransition(info.Status, ToolStatusDisabled) {
+			info.Status = ToolStatusDisabled
+			r.toolInfo[name] = info
+		}
 	}
 
 	r.running = false
 
 	r.logger.Info("tool registry stopped")
+	return nil
+}
+
+// TransitionStatus implements ToolRegistry.TransitionStatus
+func (r *DefaultToolRegistry) TransitionStatus(name string, newStatus ToolStatus) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.logger.Info("transitioning tool status",
+		"name", name,
+		"new_status", string(newStatus),
+	)
+
+	// Check if tool exists
+	info, exists := r.toolInfo[name]
+	if !exists {
+		r.logger.Error("attempted to transition status of non-existent tool",
+			"name", name,
+			"new_status", string(newStatus),
+		)
+		return fmt.Errorf("%w: %s", ErrToolNotFound, name)
+	}
+
+	currentStatus := info.Status
+	
+	// Validate transition
+	if !IsValidTransition(currentStatus, newStatus) {
+		r.logger.Error("invalid status transition attempted",
+			"name", name,
+			"current_status", string(currentStatus),
+			"new_status", string(newStatus),
+		)
+		return fmt.Errorf("%w: cannot transition from %s to %s", 
+			ErrInvalidTransition, string(currentStatus), string(newStatus))
+	}
+
+	// Check registry state for certain transitions
+	if !r.running && (newStatus == ToolStatusActive || newStatus == ToolStatusLoaded) {
+		r.logger.Error("cannot activate tool when registry is not running",
+			"name", name,
+			"new_status", string(newStatus),
+		)
+		return fmt.Errorf("%w: cannot transition to %s when registry is stopped", 
+			ErrRegistryNotRunning, string(newStatus))
+	}
+
+	// Update tool status
+	info.Status = newStatus
+	r.toolInfo[name] = info
+
+	// Handle special transitions
+	switch newStatus {
+	case ToolStatusDisabled:
+		// Remove from active tools map
+		if _, exists := r.tools[name]; exists {
+			delete(r.tools, name)
+			r.logger.Debug("removed tool instance for disabled tool", "name", name)
+		}
+	case ToolStatusError:
+		// Remove from active tools map but keep factory
+		if _, exists := r.tools[name]; exists {
+			delete(r.tools, name)
+			r.logger.Debug("removed tool instance for error tool", "name", name)
+		}
+	}
+
+	r.logger.Info("tool status transition completed successfully",
+		"name", name,
+		"previous_status", string(currentStatus),
+		"new_status", string(newStatus),
+	)
+
 	return nil
 }
 
