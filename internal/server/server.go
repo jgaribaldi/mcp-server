@@ -30,6 +30,35 @@ type ReadyResponse struct {
 	Version   string `json:"version"`
 }
 
+// ToolsHealthResponse represents detailed tool health information
+type ToolsHealthResponse struct {
+	Status    string                    `json:"status"`
+	Timestamp string                    `json:"timestamp"`
+	Summary   ToolHealthSummary         `json:"summary"`
+	Tools     map[string]ToolHealthInfo `json:"tools"`
+}
+
+// ToolHealthSummary provides overall tool health statistics
+type ToolHealthSummary struct {
+	Total      int `json:"total"`
+	Active     int `json:"active"`
+	Loaded     int `json:"loaded"`
+	Registered int `json:"registered"`
+	Error      int `json:"error"`
+	Disabled   int `json:"disabled"`
+}
+
+// ToolHealthInfo provides detailed information about a specific tool
+type ToolHealthInfo struct {
+	Name         string    `json:"name"`
+	Status       string    `json:"status"`
+	Description  string    `json:"description"`
+	Version      string    `json:"version"`
+	Capabilities []string  `json:"capabilities"`
+	LastCheck    string    `json:"last_check"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+}
+
 // MetricsResponse represents registry metrics information
 type MetricsResponse struct {
 	Status           string            `json:"status"`
@@ -137,6 +166,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc("/tools/health", s.handleToolsHealth)
 }
 
 // handleHealth handles health check requests
@@ -408,7 +438,118 @@ func (s *Server) buildMetricsResponse() MetricsResponse {
 	}
 }
 
+// Tool Health Functions - Single responsibility: tool health data collection and aggregation
+
+// collectToolHealthData gathers detailed tool health information
+func (s *Server) collectToolHealthData() (tools.RegistryHealth, []tools.ToolInfo) {
+	return s.registry.Health(), s.registry.List()
+}
+
+// buildToolHealthSummary calculates summary statistics from tool list
+func (s *Server) buildToolHealthSummary(toolList []tools.ToolInfo) ToolHealthSummary {
+	summary := ToolHealthSummary{Total: len(toolList)}
+	
+	for _, tool := range toolList {
+		switch tool.Status {
+		case tools.ToolStatusActive:
+			summary.Active++
+		case tools.ToolStatusLoaded:
+			summary.Loaded++
+		case tools.ToolStatusRegistered:
+			summary.Registered++
+		case tools.ToolStatusError:
+			summary.Error++
+		case tools.ToolStatusDisabled:
+			summary.Disabled++
+		}
+	}
+	
+	return summary
+}
+
+// buildToolHealthDetails creates detailed tool health information map
+func (s *Server) buildToolHealthDetails(toolList []tools.ToolInfo, registryHealth tools.RegistryHealth) map[string]ToolHealthInfo {
+	toolDetails := make(map[string]ToolHealthInfo)
+	
+	for _, tool := range toolList {
+		details := ToolHealthInfo{
+			Name:         tool.Name,
+			Status:       string(tool.Status),
+			Description:  tool.Description,
+			Version:      tool.Version,
+			Capabilities: tool.Capabilities,
+			LastCheck:    registryHealth.LastCheck,
+		}
+		
+		if tool.Status == tools.ToolStatusError {
+			details.ErrorMessage = "Tool failed validation or creation"
+		}
+		
+		toolDetails[tool.Name] = details
+	}
+	
+	return toolDetails
+}
+
+// determineToolsOverallHealth determines overall tools health status
+func (s *Server) determineToolsOverallHealth(summary ToolHealthSummary, registryHealth tools.RegistryHealth) string {
+	if registryHealth.Status == "stopped" {
+		return "stopped"
+	}
+	if summary.Error > 0 {
+		return "degraded"
+	}
+	if summary.Active == 0 && summary.Total > 0 {
+		return "degraded"
+	}
+	return "healthy"
+}
+
+// buildToolsHealthResponse orchestrates tools health data collection and response building
+func (s *Server) buildToolsHealthResponse() ToolsHealthResponse {
+	registryHealth, toolList := s.collectToolHealthData()
+	summary := s.buildToolHealthSummary(toolList)
+	toolDetails := s.buildToolHealthDetails(toolList, registryHealth)
+	
+	return ToolsHealthResponse{
+		Status:    s.determineToolsOverallHealth(summary, registryHealth),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Summary:   summary,
+		Tools:     toolDetails,
+	}
+}
+
 // HTTP Handler Function - Single responsibility: HTTP request/response handling
+
+// handleToolsHealth handles detailed tools health requests
+func (s *Server) handleToolsHealth(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("tools health requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	response := s.buildToolsHealthResponse()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal tools health response", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("tools health request completed successfully",
+		"status", response.Status,
+		"total_tools", response.Summary.Total,
+		"active_tools", response.Summary.Active,
+		"error_tools", response.Summary.Error,
+	)
+}
 
 // handleMetrics handles metrics endpoint requests
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
