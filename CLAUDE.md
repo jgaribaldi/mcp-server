@@ -187,7 +187,7 @@ go test ./tests/integration/...
 go test -bench=. ./...
 ```
 
-### Code Quality
+### Code Quality Tools
 ```bash
 # Format code
 go fmt ./...
@@ -201,6 +201,104 @@ go vet ./...
 # Check for security issues (requires gosec)
 gosec ./...
 ```
+
+### Code Quality Standards
+
+This project follows strict coding standards to ensure maintainability, readability, and reliability:
+
+#### Single Responsibility Principle
+All functions should adhere to the Single Responsibility Principle - each function should do one thing and one thing only. This makes code easier to test, understand, and maintain.
+
+**Good Example:**
+```go
+func (s *EchoService) Transform(message, prefix, suffix string, uppercase bool) string {
+    result := prefix + message + suffix
+    if uppercase {
+        result = strings.ToUpper(result)
+    }
+    return result
+}
+
+func (s *EchoService) Validate(message string) error {
+    if message == "" {
+        return fmt.Errorf("message cannot be empty")
+    }
+    return nil
+}
+```
+
+**Avoid:**
+```go
+// Function doing too many things
+func (s *EchoService) ProcessMessage(message, prefix, suffix string, uppercase bool) (string, error) {
+    // Validation logic
+    if message == "" {
+        return "", fmt.Errorf("message cannot be empty")
+    }
+    
+    // Transformation logic
+    result := prefix + message + suffix
+    if uppercase {
+        result = strings.ToUpper(result)
+    }
+    
+    // Logging logic
+    log.Printf("Processed message: %s", result)
+    
+    return result, nil
+}
+```
+
+#### Comment Guidelines
+Include comments only when they add value for human developers. Avoid obvious comments that simply restate what the code does.
+
+**Include comments for:**
+- Complex business logic that may not be immediately clear
+- Non-obvious algorithmic choices or performance optimizations
+- External API integrations or protocol-specific implementations
+- Workarounds for known issues or limitations
+
+**Good Example:**
+```go
+// Circuit breaker pattern: fail fast when service is consistently failing
+// to prevent cascade failures across the system
+if s.breaker.State() == gobreaker.StateOpen {
+    return nil, ErrServiceUnavailable
+}
+
+func (s *EchoService) ValidateAll(message, prefix, suffix string) error {
+    // Validate each parameter independently to provide specific error messages
+    if err := s.Validate(message); err != nil {
+        return err
+    }
+    return nil
+}
+```
+
+**Avoid obvious comments:**
+```go
+// Create new echo service - AVOID: obvious from function name
+func NewEchoService() *EchoService {
+    return &EchoService{}
+}
+
+// Return the name - AVOID: obvious from return statement
+func (t *EchoTool) Name() string {
+    return "echo"
+}
+
+// Check if message is empty - AVOID: obvious from condition
+if message == "" {
+    return fmt.Errorf("message cannot be empty")
+}
+```
+
+**Code Organization Principles:**
+- Separate business logic from infrastructure concerns
+- Use dependency injection for testability
+- Keep functions small and focused
+- Use meaningful variable and function names that reduce the need for comments
+- Group related functionality into cohesive packages
 
 ## Production Deployment
 
