@@ -8,7 +8,6 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// EchoParams represents the parameters for the Echo tool
 type EchoParams struct {
 	Message   string `json:"message"`
 	Prefix    string `json:"prefix,omitempty"`
@@ -16,13 +15,11 @@ type EchoParams struct {
 	Uppercase bool   `json:"uppercase,omitempty"`
 }
 
-// EchoTool implements the mcp.Tool interface for the Echo tool
 type EchoTool struct {
 	service *EchoService
 	handler *EchoHandler
 }
 
-// NewEchoTool creates a new EchoTool instance
 func NewEchoTool() *EchoTool {
 	service := NewEchoService()
 	handler := NewEchoHandler(service)
@@ -32,17 +29,14 @@ func NewEchoTool() *EchoTool {
 	}
 }
 
-// Name implements mcp.Tool.Name
 func (t *EchoTool) Name() string {
 	return "echo"
 }
 
-// Description implements mcp.Tool.Description
 func (t *EchoTool) Description() string {
 	return "Simple text manipulation tool for testing and demonstration"
 }
 
-// Parameters implements mcp.Tool.Parameters
 func (t *EchoTool) Parameters() json.RawMessage {
 	schema := `{
 		"type": "object",
@@ -73,41 +67,33 @@ func (t *EchoTool) Parameters() json.RawMessage {
 	return json.RawMessage(schema)
 }
 
-// Handler implements mcp.Tool.Handler
 func (t *EchoTool) Handler() mcp.ToolHandler {
 	return t.handler
 }
 
-// EchoHandler implements the mcp.ToolHandler interface
 type EchoHandler struct {
 	service *EchoService
 }
 
-// NewEchoHandler creates a new EchoHandler instance
 func NewEchoHandler(service *EchoService) *EchoHandler {
 	return &EchoHandler{
 		service: service,
 	}
 }
 
-// Handle implements mcp.ToolHandler.Handle
 func (h *EchoHandler) Handle(ctx context.Context, params json.RawMessage) (mcp.ToolResult, error) {
 	var echoParams EchoParams
 	
-	// Parse JSON parameters
 	if err := json.Unmarshal(params, &echoParams); err != nil {
 		return mcp.NewToolError(fmt.Errorf("invalid parameters: %w", err)), nil
 	}
 	
-	// Validate parameters using business logic
 	if err := h.service.ValidateAll(echoParams.Message, echoParams.Prefix, echoParams.Suffix); err != nil {
 		return mcp.NewToolError(err), nil
 	}
 	
-	// Transform message using business logic
 	result := h.service.Transform(echoParams.Message, echoParams.Prefix, echoParams.Suffix, echoParams.Uppercase)
 	
-	// Create and return successful result
 	content := mcp.NewTextContent(result)
 	return mcp.NewToolResult(content), nil
 }
