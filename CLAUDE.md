@@ -59,9 +59,9 @@ mcp-server/
 │   │   └── config.go
 │   ├── tools/              # MCP tools implementation
 │   │   ├── registry.go     # Tool registration and management
-│   │   ├── bitcoin/        # Bitcoin price tool
-│   │   │   ├── bitcoin.go
-│   │   │   └── bitcoin_test.go
+│   │   ├── echo/           # Echo tool (simple example)
+│   │   │   ├── echo.go
+│   │   │   └── echo_test.go
 │   │   ├── filesystem/     # File system operations tool
 │   │   │   ├── filesystem.go
 │   │   │   └── filesystem_test.go
@@ -269,9 +269,9 @@ curl http://localhost:8080/metrics
 ```go
 // Tool registration in internal/tools/registry.go
 func RegisterTools(server *mcp.Server) error {
-    // Register Bitcoin price tool
-    if err := server.RegisterTool("bitcoin_price", bitcoin.New()); err != nil {
-        return fmt.Errorf("failed to register bitcoin tool: %w", err)
+    // Register Echo tool
+    if err := server.RegisterTool("echo", echo.New()); err != nil {
+        return fmt.Errorf("failed to register echo tool: %w", err)
     }
     
     // Register filesystem tool
@@ -353,11 +353,11 @@ git init
 
 ### Commit 7: First Example Tool
 **Specification**: Create `specs/commit-7-first-tool.md` before implementing
-- Implement Bitcoin price tool in `internal/tools/bitcoin/`
+- Implement Echo tool in `internal/tools/echo/`
 - Add tool execution with proper error handling
 - Create tool-specific tests with error scenarios
 - Add request/response logging for tool invocations
-- **Error Handling**: API failures, data parsing errors, network timeouts
+- **Error Handling**: Parameter validation errors, input processing failures
 
 ### Commit 8: Resource Registration Framework
 **Specification**: Create `specs/commit-8-resource-framework.md` before implementing
