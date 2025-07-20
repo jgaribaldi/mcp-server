@@ -74,6 +74,11 @@ func setupServers(cfg *config.Config, log *logger.Logger) (*server.Server, error
 	// Initialize HTTP server
 	srv := server.New(cfg, log)
 
+	// Register available tools before starting MCP server
+	if err := registerAllTools(srv.Registry(), log); err != nil {
+		return nil, fmt.Errorf("failed to register tools: %w", err)
+	}
+
 	// Start MCP server
 	ctx := context.Background()
 	if err := srv.StartMCP(ctx); err != nil {

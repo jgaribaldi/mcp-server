@@ -579,3 +579,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		"memory_mb", response.Performance.MemoryUsageMB,
 	)
 }
+
+// Registry returns the tool registry for external tool registration
+func (s *Server) Registry() tools.ToolRegistry {
+	return s.registry
+}
