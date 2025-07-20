@@ -47,7 +47,6 @@ func (h *EmojiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h *EmojiHandler) Handle(ctx context.Context, r slog.Record) error {
 	if emoji, ok := h.emojis[r.Level]; ok {
-		// Create new record with emoji prefix
 		newRecord := slog.NewRecord(r.Time, r.Level, emoji+" "+r.Message, r.PC)
 		r.Attrs(func(a slog.Attr) bool {
 			newRecord.AddAttrs(a)
@@ -95,7 +94,6 @@ func New(cfg Config) (*Logger, error) {
 			NoColor:    false,         // Auto-detect terminal
 			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 				if a.Key == slog.LevelKey {
-					// Convert level to 3-character format and make bold
 					var levelStr string
 					switch a.Value.Any().(slog.Level) {
 					case slog.LevelDebug:
@@ -109,7 +107,6 @@ func New(cfg Config) (*Logger, error) {
 					default:
 						levelStr = a.Value.String()
 					}
-					// Make level bold with ANSI codes
 					boldLevel := "\033[1m" + levelStr + "\033[0m"
 					return slog.Attr{Key: a.Key, Value: slog.StringValue(boldLevel)}
 				}

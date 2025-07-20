@@ -20,34 +20,29 @@ const (
 )
 
 func main() {
-	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
 		os.Exit(ExitCodeError)
 	}
 
-	// Setup logging
 	log, err := setupLogging(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(ExitCodeError)
 	}
 
-	// Setup servers
 	srv, err := setupServers(cfg, log)
 	if err != nil {
 		log.Error("Failed to setup servers", "error", err)
 		os.Exit(ExitCodeError)
 	}
 
-	// Run servers and wait for shutdown signal
 	if err := runServers(srv, log); err != nil {
 		log.Error("Server startup failed", "error", err)
 		os.Exit(ExitCodeError)
 	}
 
-	// Perform graceful shutdown
 	gracefulShutdown(srv, log)
 
 	os.Exit(ExitCodeOK)
@@ -71,15 +66,12 @@ func setupServers(cfg *config.Config, log *logger.Logger) (*server.Server, error
 		"port", cfg.Server.Port,
 		"version", cfg.Logger.Version)
 
-	// Initialize HTTP server
 	srv := server.New(cfg, log)
 
-	// Register available tools before starting MCP server
 	if err := registerAllTools(srv.Registry(), log); err != nil {
 		return nil, fmt.Errorf("failed to register tools: %w", err)
 	}
 
-	// Start MCP server
 	ctx := context.Background()
 	if err := srv.StartMCP(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start MCP server: %w", err)
@@ -90,11 +82,9 @@ func setupServers(cfg *config.Config, log *logger.Logger) (*server.Server, error
 
 // runServers starts all servers and waits for shutdown signal
 func runServers(srv *server.Server, log *logger.Logger) error {
-	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start HTTP server in background goroutine
 	serverErrChan := make(chan error, 1)
 	go func() {
 		log.Info("Starting HTTP server")
@@ -109,7 +99,6 @@ func runServers(srv *server.Server, log *logger.Logger) error {
 		"http_endpoint", fmt.Sprintf("http://%s:%d", "localhost", 3000),
 		"mcp_protocol", "stdio")
 
-	// Wait for shutdown signal or server error
 	select {
 	case sig := <-sigChan:
 		log.Info("Received shutdown signal", "signal", sig.String())
@@ -121,7 +110,6 @@ func runServers(srv *server.Server, log *logger.Logger) error {
 
 // gracefulShutdown performs graceful shutdown of all servers
 func gracefulShutdown(srv *server.Server, log *logger.Logger) {
-	// Give some time for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 

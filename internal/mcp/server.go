@@ -51,7 +51,6 @@ func (s *Server) Start(ctx context.Context, transport Transport) error {
 		"version", s.impl.Version,
 	)
 
-	// Create mark3labs MCP server instance
 	s.mcpServer = server.NewMCPServer(
 		s.impl.Name,
 		s.impl.Version,
@@ -60,17 +59,14 @@ func (s *Server) Start(ctx context.Context, transport Transport) error {
 		server.WithRecovery(),
 	)
 
-	// Store transport for later use
 	s.transport = transport
 
-	// Register existing tools
 	for _, tool := range s.tools {
 		if err := s.registerTool(tool); err != nil {
 			return fmt.Errorf("failed to register tool %s: %w", tool.Name(), err)
 		}
 	}
 
-	// Register existing resources
 	for _, resource := range s.resources {
 		if err := s.registerResource(resource); err != nil {
 			return fmt.Errorf("failed to register resource %s: %w", resource.URI(), err)
@@ -118,7 +114,6 @@ func (s *Server) AddTool(tool Tool) error {
 
 	s.tools[tool.Name()] = tool
 
-	// Register with running server if active
 	if s.running && s.mcpServer != nil {
 		return s.registerTool(tool)
 	}
@@ -135,7 +130,6 @@ func (s *Server) AddResource(resource Resource) error {
 
 	s.resources[resource.URI()] = resource
 
-	// Register with running server if active
 	if s.running && s.mcpServer != nil {
 		return s.registerResource(resource)
 	}
@@ -150,14 +144,12 @@ func (s *Server) GetImplementation() Implementation {
 
 // registerTool registers a tool with the underlying mark3labs MCP server
 func (s *Server) registerTool(tool Tool) error {
-	// Start with basic tool definition
 	options := []mcp.ToolOption{
 		mcp.WithDescription(tool.Description()),
 	}
 
 	// Parse and add parameters if available
 	if tool.Parameters() != nil {
-		// Convert JSON schema parameters
 		var params map[string]interface{}
 		if err := json.Unmarshal(tool.Parameters(), &params); err != nil {
 			return fmt.Errorf("failed to parse tool parameters: %w", err)
@@ -191,13 +183,10 @@ func (s *Server) registerTool(tool Tool) error {
 		}
 	}
 
-	// Create mark3labs tool definition
 	mcpTool := mcp.NewTool(tool.Name(), options...)
 
-	// Create handler adapter
 	handler := s.createToolHandlerAdapter(tool.Handler())
 
-	// Register with mark3labs server
 	s.mcpServer.AddTool(mcpTool, handler)
 
 	return nil
