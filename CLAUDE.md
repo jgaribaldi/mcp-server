@@ -516,7 +516,7 @@ git init
 
 **Key Principles:**
 - **Specification First**: Create detailed spec file before any implementation
-- Each commit maintains a runnable state
+- Each commit maintains a runnable state with passing tests and no compiler warnings
 - Error handling and logging are integral to each increment
 - Tests are added alongside implementation
 - Configuration and deployment considerations are included early
