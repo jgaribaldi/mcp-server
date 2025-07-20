@@ -66,11 +66,8 @@ func TestEchoTool_Handler(t *testing.T) {
 		t.Fatal("Handler() should return a valid handler instance")
 	}
 	
-	// Verify it implements the correct interface
-	_, ok := handler.(mcp.ToolHandler)
-	if !ok {
-		t.Fatal("Handler() should return an instance that implements mcp.ToolHandler")
-	}
+	// Verify handler can be used as ToolHandler interface
+	var _ mcp.ToolHandler = handler
 }
 
 func TestNewEchoHandler(t *testing.T) {
