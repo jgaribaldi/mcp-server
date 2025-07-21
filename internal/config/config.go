@@ -31,14 +31,12 @@ const (
 	DefaultBufferSize      = 4096
 )
 
-// Config holds all configuration for the MCP server
 type Config struct {
 	Server ServerConfig
 	Logger LoggerConfig
 	MCP    MCPConfig
 }
 
-// ServerConfig holds server-specific configuration
 type ServerConfig struct {
 	Host           string
 	Port           int
@@ -48,7 +46,6 @@ type ServerConfig struct {
 	MaxHeaderBytes int
 }
 
-// LoggerConfig holds logger configuration
 type LoggerConfig struct {
 	Level     string
 	Format    string
@@ -57,7 +54,6 @@ type LoggerConfig struct {
 	UseEmojis bool
 }
 
-// MCPConfig holds MCP-specific configuration
 type MCPConfig struct {
 	ProtocolTimeout time.Duration
 	MaxTools        int
@@ -68,14 +64,12 @@ type MCPConfig struct {
 	ResourceCache   ResourceCacheConfig
 }
 
-// ResourceCacheConfig holds resource caching configuration
 type ResourceCacheConfig struct {
 	DefaultTimeout int  `json:"default_timeout_seconds"`
 	MaxSize        int  `json:"max_size"`
 	Enabled        bool `json:"enabled"`
 }
 
-// ValidationErrors represents multiple validation errors
 type ValidationErrors []string
 
 func (ve ValidationErrors) Error() string {
@@ -88,7 +82,6 @@ func (ve ValidationErrors) Error() string {
 	return fmt.Sprintf("multiple validation errors: %s", strings.Join(ve, "; "))
 }
 
-// FileConfig represents configuration loaded from YAML files
 type FileConfig struct {
 	Server FileServerConfig `yaml:"server"`
 	Logger FileLoggerConfig `yaml:"logger"`
@@ -141,7 +134,6 @@ func getEnvBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-// loadConfigFile attempts to load configuration from YAML files
 func loadConfigFile() (*FileConfig, error) {
 	configPath := getEnv("MCP_CONFIG_FILE", "")
 	if configPath == "" {
@@ -177,7 +169,6 @@ func loadConfigFile() (*FileConfig, error) {
 	return &fileConfig, nil
 }
 
-// mergeFileConfig merges file configuration with base config, respecting environment variable precedence
 func mergeFileConfig(base *Config, file *FileConfig) *Config {
 	if file == nil {
 		return base
@@ -264,9 +255,7 @@ func mergeFileConfig(base *Config, file *FileConfig) *Config {
 	return &result
 }
 
-// Load loads configuration from environment variables and files with defaults
 func Load() (*Config, error) {
-	// Load base configuration with defaults
 	cfg := &Config{
 		Server: ServerConfig{
 			Host:           getEnv("MCP_SERVER_HOST", DefaultServerHost),
@@ -298,7 +287,6 @@ func Load() (*Config, error) {
 		},
 	}
 	
-	// Try to load configuration file
 	fileConfig, err := loadConfigFile()
 	if err != nil {
 		// Log warning but don't fail - env vars might be sufficient
@@ -306,7 +294,6 @@ func Load() (*Config, error) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load config file: %v\n", err)
 	}
 	
-	// Merge file config with environment variables taking precedence
 	cfg = mergeFileConfig(cfg, fileConfig)
 	
 	if err := cfg.Validate(); err != nil {
@@ -316,11 +303,9 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// Validate validates the configuration with enhanced error reporting
 func (c *Config) Validate() error {
 	var errors ValidationErrors
 	
-	// Enhanced server validation
 	if c.Server.Host == "" {
 		errors = append(errors, "server host cannot be empty (hint: use 'localhost' for local development)")
 	}
@@ -332,7 +317,6 @@ func (c *Config) Validate() error {
 		// We don't add this to errors as it's not fatal, just noteworthy
 	}
 	
-	// Enhanced timeout validation with cross-parameter checks
 	if c.Server.ReadTimeout < 0 {
 		errors = append(errors, fmt.Sprintf("server read timeout cannot be negative, got %v (hint: use 15s or larger)", c.Server.ReadTimeout))
 	} else if c.Server.ReadTimeout > 5*time.Minute {
@@ -364,7 +348,6 @@ func (c *Config) Validate() error {
 		errors = append(errors, fmt.Sprintf("server max header bytes is very large: %d (hint: typically 1MB-8MB)", c.Server.MaxHeaderBytes))
 	}
 	
-	// Enhanced logger validation with case normalization
 	normalizedLevel := strings.ToLower(c.Logger.Level)
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 	if !validLevels[normalizedLevel] {
@@ -420,7 +403,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// String returns a human-readable configuration summary
 func (c *Config) String() string {
 	return fmt.Sprintf(`Configuration Summary:
 Server: %s:%d (timeouts: read=%v, write=%v, idle=%v)
@@ -434,7 +416,6 @@ Resource Cache: enabled=%v, timeout=%ds, max_size=%d`,
 		c.MCP.ResourceCache.Enabled, c.MCP.ResourceCache.DefaultTimeout, c.MCP.ResourceCache.MaxSize)
 }
 
-// ToJSON exports configuration as JSON for debugging
 func (c *Config) ToJSON() (string, error) {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -443,7 +424,6 @@ func (c *Config) ToJSON() (string, error) {
 	return string(data), nil
 }
 
-// ValidationReport returns detailed validation report
 func (c *Config) ValidationReport() string {
 	if err := c.Validate(); err == nil {
 		return "Configuration validation: PASSED"
@@ -452,7 +432,6 @@ func (c *Config) ValidationReport() string {
 	}
 }
 
-// getEnv gets environment variable with default value
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -460,7 +439,6 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvInt gets environment variable as integer with default value
 func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
@@ -470,7 +448,6 @@ func getEnvInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// getEnvDuration gets environment variable as duration with default value
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if duration, err := time.ParseDuration(value); err == nil {

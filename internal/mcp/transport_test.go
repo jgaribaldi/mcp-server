@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// TestableStdioTransport allows injection of custom readers/writers for testing
 type TestableStdioTransport struct {
 	reader    io.Reader
 	writer    io.Writer
@@ -19,7 +18,6 @@ type TestableStdioTransport struct {
 	bufWriter *bufio.Writer
 }
 
-// NewTestableStdioTransport creates a stdio transport with custom reader/writer
 func NewTestableStdioTransport(reader io.Reader, writer io.Writer) *TestableStdioTransport {
 	return &TestableStdioTransport{
 		reader:    reader,
@@ -29,7 +27,6 @@ func NewTestableStdioTransport(reader io.Reader, writer io.Writer) *TestableStdi
 	}
 }
 
-// Read implements Transport.Read
 func (t *TestableStdioTransport) Read() ([]byte, error) {
 	line, err := t.bufReader.ReadBytes('\n')
 	if err != nil {
@@ -41,7 +38,6 @@ func (t *TestableStdioTransport) Read() ([]byte, error) {
 	return line, nil
 }
 
-// Write implements Transport.Write
 func (t *TestableStdioTransport) Write(data []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -57,13 +53,12 @@ func (t *TestableStdioTransport) Write(data []byte) error {
 	return nil
 }
 
-// Close implements Transport.Close
 func (t *TestableStdioTransport) Close() error {
 	return nil
 }
 
-// Test stdio transport creation
 func TestNewStdioTransport(t *testing.T) {
+	// TODO: remove useless test
 	transport := NewStdioTransport()
 	if transport == nil {
 		t.Fatal("NewStdioTransport returned nil")
@@ -73,8 +68,8 @@ func TestNewStdioTransport(t *testing.T) {
 	var _ Transport = transport
 }
 
-// Test transport factory
 func TestTransportFactory(t *testing.T) {
+	// TODO: remove useless test
 	factory := NewTransportFactory()
 	if factory == nil {
 		t.Fatal("NewTransportFactory returned nil")
@@ -89,17 +84,13 @@ func TestTransportFactory(t *testing.T) {
 	var _ Transport = transport
 }
 
-// Test basic read/write operations
 func TestStdioTransportReadWrite(t *testing.T) {
-	// Create test data
 	input := "test message\n"
 	reader := strings.NewReader(input)
 	var writer bytes.Buffer
 
-	// Create testable transport
 	transport := NewTestableStdioTransport(reader, &writer)
 
-	// Test read
 	data, err := transport.Read()
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
@@ -109,7 +100,6 @@ func TestStdioTransportReadWrite(t *testing.T) {
 		t.Errorf("Expected '%s', got '%s'", input, string(data))
 	}
 
-	// Test write
 	output := []byte("response message\n")
 	if err := transport.Write(output); err != nil {
 		t.Fatalf("Write failed: %v", err)
@@ -120,7 +110,6 @@ func TestStdioTransportReadWrite(t *testing.T) {
 	}
 }
 
-// Test read with multiple lines
 func TestStdioTransportMultipleReads(t *testing.T) {
 	input := "line1\nline2\nline3\n"
 	reader := strings.NewReader(input)
@@ -156,7 +145,6 @@ func TestStdioTransportMultipleReads(t *testing.T) {
 	}
 }
 
-// Test read with EOF
 func TestStdioTransportReadEOF(t *testing.T) {
 	reader := strings.NewReader("") // Empty reader
 	var writer bytes.Buffer
@@ -174,7 +162,6 @@ func TestStdioTransportReadEOF(t *testing.T) {
 	}
 }
 
-// Test write error handling
 func TestStdioTransportWriteError(t *testing.T) {
 	reader := strings.NewReader("test\n")
 
@@ -194,14 +181,12 @@ func TestStdioTransportWriteError(t *testing.T) {
 	}
 }
 
-// Test multiple concurrent writes (thread safety)
 func TestStdioTransportConcurrentWrites(t *testing.T) {
 	reader := strings.NewReader("test\n")
 	var writer bytes.Buffer
 
 	transport := NewTestableStdioTransport(reader, &writer)
 
-	// Number of concurrent writes
 	numWrites := 10
 	var wg sync.WaitGroup
 	wg.Add(numWrites)
@@ -217,7 +202,6 @@ func TestStdioTransportConcurrentWrites(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for all writes to complete
 	wg.Wait()
 
 	// Verify all messages were written (order not guaranteed due to concurrency)
@@ -230,27 +214,24 @@ func TestStdioTransportConcurrentWrites(t *testing.T) {
 	}
 }
 
-// Test close operation
 func TestStdioTransportClose(t *testing.T) {
 	reader := strings.NewReader("test\n")
 	var writer bytes.Buffer
 
 	transport := NewTestableStdioTransport(reader, &writer)
 
-	// Close should not return an error for stdio transport
 	if err := transport.Close(); err != nil {
 		t.Errorf("Close returned unexpected error: %v", err)
 	}
 }
 
-// Test interface compliance
 func TestTransportInterfaceCompliance(t *testing.T) {
+	// TODO: remove useless test
 	// Ensure our implementations satisfy the Transport interface
 	var _ Transport = (*StdioTransport)(nil)
 	var _ Transport = (*TestableStdioTransport)(nil)
 }
 
-// Test edge cases
 func TestStdioTransportEmptyWrite(t *testing.T) {
 	reader := strings.NewReader("test\n")
 	var writer bytes.Buffer
@@ -267,7 +248,6 @@ func TestStdioTransportEmptyWrite(t *testing.T) {
 	}
 }
 
-// Test read without newline
 func TestStdioTransportReadWithoutNewline(t *testing.T) {
 	reader := strings.NewReader("no newline")
 	var writer bytes.Buffer
@@ -281,7 +261,6 @@ func TestStdioTransportReadWithoutNewline(t *testing.T) {
 	}
 }
 
-// Test large data handling
 func TestStdioTransportLargeData(t *testing.T) {
 	// Create large input (10KB)
 	largeData := strings.Repeat("a", 10*1024) + "\n"
@@ -311,9 +290,6 @@ func TestStdioTransportLargeData(t *testing.T) {
 	}
 }
 
-// Helper types for testing
-
-// errorWriter always returns an error on Write
 type errorWriter struct{}
 
 func (e *errorWriter) Write(p []byte) (n int, err error) {
@@ -357,7 +333,6 @@ func BenchmarkStdioTransportRead(b *testing.B) {
 	}
 }
 
-// Test real stdio transport creation (can't test actual I/O without stdin/stdout)
 func TestRealStdioTransportCreation(t *testing.T) {
 	transport := NewStdioTransport()
 	if transport == nil {

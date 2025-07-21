@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// Mock implementations for testing interface compliance
-
-// MockMCPServer implements MCPServer for testing
 type MockMCPServer struct {
 	tools     map[string]Tool
 	resources map[string]Resource
@@ -46,7 +43,6 @@ func (m *MockMCPServer) GetImplementation() Implementation {
 	return m.impl
 }
 
-// MockTool implements Tool for testing
 type MockTool struct {
 	name        string
 	description string
@@ -59,7 +55,6 @@ func (m *MockTool) Description() string       { return m.description }
 func (m *MockTool) Parameters() json.RawMessage { return m.parameters }
 func (m *MockTool) Handler() ToolHandler      { return m.handler }
 
-// MockToolHandler implements ToolHandler for testing
 type MockToolHandler struct {
 	handleFunc func(ctx context.Context, params json.RawMessage) (ToolResult, error)
 }
@@ -71,7 +66,6 @@ func (m *MockToolHandler) Handle(ctx context.Context, params json.RawMessage) (T
 	return &MockToolResult{}, nil
 }
 
-// MockToolResult implements ToolResult for testing
 type MockToolResult struct {
 	isError bool
 	content []Content
@@ -82,7 +76,6 @@ func (m *MockToolResult) IsError() bool       { return m.isError }
 func (m *MockToolResult) GetContent() []Content { return m.content }
 func (m *MockToolResult) GetError() error     { return m.err }
 
-// MockResource implements Resource for testing
 type MockResource struct {
 	uri         string
 	name        string
@@ -97,14 +90,12 @@ func (m *MockResource) Description() string    { return m.description }
 func (m *MockResource) MimeType() string       { return m.mimeType }
 func (m *MockResource) Handler() ResourceHandler { return m.handler }
 
-// MockResourceHandler implements ResourceHandler for testing
 type MockResourceHandler struct{}
 
 func (m *MockResourceHandler) Read(ctx context.Context, uri string) (ResourceContent, error) {
 	return &MockResourceContent{}, nil
 }
 
-// MockResourceContent implements ResourceContent for testing
 type MockResourceContent struct {
 	content  []Content
 	mimeType string
@@ -113,7 +104,6 @@ type MockResourceContent struct {
 func (m *MockResourceContent) GetContent() []Content { return m.content }
 func (m *MockResourceContent) GetMimeType() string   { return m.mimeType }
 
-// MockTransport implements Transport for testing
 type MockTransport struct {
 	readFunc  func() ([]byte, error)
 	writeFunc func(data []byte) error
@@ -141,7 +131,6 @@ func (m *MockTransport) Close() error {
 	return nil
 }
 
-// MockContent implements Content for testing
 type MockContent struct {
 	contentType string
 	text        string
@@ -156,6 +145,7 @@ func (m *MockContent) GetBlob() []byte { return m.blob }
 // properly implement the interfaces (compile-time verification)
 func TestInterfaceCompliance(t *testing.T) {
 	// Test that our mock implementations satisfy the interfaces
+	// TODO: remove useless test
 	var _ MCPServer = (*MockMCPServer)(nil)
 	var _ Tool = (*MockTool)(nil)
 	var _ ToolHandler = (*MockToolHandler)(nil)
@@ -167,7 +157,6 @@ func TestInterfaceCompliance(t *testing.T) {
 	var _ Content = (*MockContent)(nil)
 }
 
-// Test Implementation struct
 func TestImplementation(t *testing.T) {
 	impl := Implementation{
 		Name:    "test-server",
@@ -183,7 +172,6 @@ func TestImplementation(t *testing.T) {
 	}
 }
 
-// Test CallToolParams struct
 func TestCallToolParams(t *testing.T) {
 	params := CallToolParams{
 		Name:      "test-tool",
@@ -204,7 +192,6 @@ func TestCallToolParams(t *testing.T) {
 	}
 }
 
-// Test MockMCPServer basic functionality
 func TestMockMCPServer(t *testing.T) {
 	server := &MockMCPServer{
 		impl: Implementation{
@@ -215,7 +202,6 @@ func TestMockMCPServer(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Test server lifecycle
 	transport := &MockTransport{}
 	if err := server.Start(ctx, transport); err != nil {
 		t.Errorf("Failed to start server: %v", err)
@@ -233,14 +219,12 @@ func TestMockMCPServer(t *testing.T) {
 		t.Error("Expected server to be stopped")
 	}
 
-	// Test implementation getter
 	impl := server.GetImplementation()
 	if impl.Name != "mock-server" {
 		t.Errorf("Expected implementation name 'mock-server', got '%s'", impl.Name)
 	}
 }
 
-// Test tool management
 func TestToolManagement(t *testing.T) {
 	server := &MockMCPServer{}
 
@@ -251,12 +235,10 @@ func TestToolManagement(t *testing.T) {
 		handler:     &MockToolHandler{},
 	}
 
-	// Test adding tool
 	if err := server.AddTool(tool); err != nil {
 		t.Errorf("Failed to add tool: %v", err)
 	}
 
-	// Verify tool was added
 	if len(server.tools) != 1 {
 		t.Errorf("Expected 1 tool, got %d", len(server.tools))
 	}
@@ -266,7 +248,6 @@ func TestToolManagement(t *testing.T) {
 	}
 }
 
-// Test resource management
 func TestResourceManagement(t *testing.T) {
 	server := &MockMCPServer{}
 
@@ -278,12 +259,10 @@ func TestResourceManagement(t *testing.T) {
 		handler:     &MockResourceHandler{},
 	}
 
-	// Test adding resource
 	if err := server.AddResource(resource); err != nil {
 		t.Errorf("Failed to add resource: %v", err)
 	}
 
-	// Verify resource was added
 	if len(server.resources) != 1 {
 		t.Errorf("Expected 1 resource, got %d", len(server.resources))
 	}
@@ -293,7 +272,6 @@ func TestResourceManagement(t *testing.T) {
 	}
 }
 
-// Test tool handler functionality
 func TestToolHandler(t *testing.T) {
 	handlerCalled := false
 	handler := &MockToolHandler{
@@ -336,7 +314,6 @@ func TestToolHandler(t *testing.T) {
 	}
 }
 
-// Test transport functionality
 func TestTransport(t *testing.T) {
 	readCalled := false
 	writeCalled := false
@@ -360,7 +337,6 @@ func TestTransport(t *testing.T) {
 		},
 	}
 
-	// Test read
 	data, err := transport.Read()
 	if err != nil {
 		t.Errorf("Read failed: %v", err)
@@ -372,7 +348,6 @@ func TestTransport(t *testing.T) {
 		t.Error("Read function was not called")
 	}
 
-	// Test write
 	if err := transport.Write([]byte("output data")); err != nil {
 		t.Errorf("Write failed: %v", err)
 	}
@@ -380,7 +355,6 @@ func TestTransport(t *testing.T) {
 		t.Error("Write function was not called")
 	}
 
-	// Test close
 	if err := transport.Close(); err != nil {
 		t.Errorf("Close failed: %v", err)
 	}

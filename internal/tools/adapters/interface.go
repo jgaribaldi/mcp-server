@@ -33,7 +33,6 @@ type LibraryAdapter interface {
 	Health() AdapterHealth
 }
 
-// AdapterHealth represents the health status of the library adapter
 type AdapterHealth struct {
 	Status        string            `json:"status"`        // "healthy", "degraded", "unhealthy"
 	Library       string            `json:"library"`       // e.g., "mark3labs", "official"
@@ -45,7 +44,6 @@ type AdapterHealth struct {
 	Details       map[string]string `json:"details,omitempty"` // Additional details
 }
 
-// AdapterFactory creates library adapter instances
 type AdapterFactory interface {
 	CreateAdapter(cfg *config.Config, log *logger.Logger) (LibraryAdapter, error)
 	SupportedLibraries() []string

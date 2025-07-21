@@ -14,7 +14,6 @@ import (
 	"mcp-server/internal/logger"
 )
 
-// Mark3LabsAdapter implements LibraryAdapter using the mark3labs/mcp-go library
 type Mark3LabsAdapter struct {
 	logger      *logger.Logger
 	config      *config.Config
@@ -26,7 +25,6 @@ type Mark3LabsAdapter struct {
 	lastCheck   time.Time
 }
 
-// NewMark3LabsAdapter creates a new mark3labs library adapter
 func NewMark3LabsAdapter(cfg *config.Config, log *logger.Logger) *Mark3LabsAdapter {
 	return &Mark3LabsAdapter{
 		logger:    log,
@@ -37,7 +35,6 @@ func NewMark3LabsAdapter(cfg *config.Config, log *logger.Logger) *Mark3LabsAdapt
 	}
 }
 
-// RegisterTool implements LibraryAdapter.RegisterTool
 func (a *Mark3LabsAdapter) RegisterTool(tool mcpintf.Tool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -62,7 +59,6 @@ func (a *Mark3LabsAdapter) RegisterTool(tool mcpintf.Tool) error {
 	return nil
 }
 
-// UnregisterTool implements LibraryAdapter.UnregisterTool
 func (a *Mark3LabsAdapter) UnregisterTool(name string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -81,7 +77,6 @@ func (a *Mark3LabsAdapter) UnregisterTool(name string) error {
 	return nil
 }
 
-// GetTool implements LibraryAdapter.GetTool
 func (a *Mark3LabsAdapter) GetTool(name string) (mcpintf.Tool, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -94,7 +89,6 @@ func (a *Mark3LabsAdapter) GetTool(name string) (mcpintf.Tool, error) {
 	return tool, nil
 }
 
-// ListTools implements LibraryAdapter.ListTools
 func (a *Mark3LabsAdapter) ListTools() []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -106,7 +100,6 @@ func (a *Mark3LabsAdapter) ListTools() []string {
 	return tools
 }
 
-// RegisterResource implements LibraryAdapter.RegisterResource
 func (a *Mark3LabsAdapter) RegisterResource(resource mcpintf.Resource) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -116,14 +109,12 @@ func (a *Mark3LabsAdapter) RegisterResource(resource mcpintf.Resource) error {
 		"name", resource.Name(),
 	)
 
-	// Store resource in our registry
 	if _, exists := a.resources[resource.URI()]; exists {
 		return fmt.Errorf("resource '%s' already exists", resource.URI())
 	}
 
 	a.resources[resource.URI()] = resource
 
-	// Register with mark3labs server if running
 	if a.running && a.mcpServer != nil {
 		return a.registerResourceWithServer(resource)
 	}
@@ -131,7 +122,6 @@ func (a *Mark3LabsAdapter) RegisterResource(resource mcpintf.Resource) error {
 	return nil
 }
 
-// UnregisterResource implements LibraryAdapter.UnregisterResource
 func (a *Mark3LabsAdapter) UnregisterResource(uri string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -150,7 +140,6 @@ func (a *Mark3LabsAdapter) UnregisterResource(uri string) error {
 	return nil
 }
 
-// GetResource implements LibraryAdapter.GetResource
 func (a *Mark3LabsAdapter) GetResource(uri string) (mcpintf.Resource, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -163,7 +152,6 @@ func (a *Mark3LabsAdapter) GetResource(uri string) (mcpintf.Resource, error) {
 	return resource, nil
 }
 
-// ListResources implements LibraryAdapter.ListResources
 func (a *Mark3LabsAdapter) ListResources() []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -175,7 +163,6 @@ func (a *Mark3LabsAdapter) ListResources() []string {
 	return resources
 }
 
-// Start implements LibraryAdapter.Start
 func (a *Mark3LabsAdapter) Start(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -186,7 +173,6 @@ func (a *Mark3LabsAdapter) Start(ctx context.Context) error {
 
 	a.logger.Info("starting mark3labs adapter")
 
-	// Create mark3labs MCP server instance
 	a.mcpServer = server.NewMCPServer(
 		"mcp-server",
 		"1.0.0",
@@ -195,7 +181,6 @@ func (a *Mark3LabsAdapter) Start(ctx context.Context) error {
 		server.WithRecovery(),
 	)
 
-	// Register all existing tools
 	for _, tool := range a.tools {
 		if err := a.registerToolWithServer(tool); err != nil {
 			a.logger.Error("failed to register tool with mark3labs server",
@@ -206,7 +191,6 @@ func (a *Mark3LabsAdapter) Start(ctx context.Context) error {
 		}
 	}
 
-	// Register all existing resources
 	for _, resource := range a.resources {
 		if err := a.registerResourceWithServer(resource); err != nil {
 			a.logger.Error("failed to register resource with mark3labs server",
@@ -224,7 +208,6 @@ func (a *Mark3LabsAdapter) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop implements LibraryAdapter.Stop
 func (a *Mark3LabsAdapter) Stop(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -244,14 +227,12 @@ func (a *Mark3LabsAdapter) Stop(ctx context.Context) error {
 	return nil
 }
 
-// IsRunning implements LibraryAdapter.IsRunning
 func (a *Mark3LabsAdapter) IsRunning() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.running
 }
 
-// Health implements LibraryAdapter.Health
 func (a *Mark3LabsAdapter) Health() AdapterHealth {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -278,7 +259,6 @@ func (a *Mark3LabsAdapter) Health() AdapterHealth {
 	}
 }
 
-// registerToolWithServer registers a tool with the underlying mark3labs server
 func (a *Mark3LabsAdapter) registerToolWithServer(tool mcpintf.Tool) error {
 	// This is a simplified implementation - in a full version we'd properly
 	// parse the JSON schema and create appropriate mark3labs tool options
@@ -286,7 +266,6 @@ func (a *Mark3LabsAdapter) registerToolWithServer(tool mcpintf.Tool) error {
 		mcp.WithDescription(tool.Description()),
 	)
 
-	// Create a simple handler adapter
 	handler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Convert arguments to JSON RawMessage
 		var args []byte
@@ -298,7 +277,6 @@ func (a *Mark3LabsAdapter) registerToolWithServer(tool mcpintf.Tool) error {
 			}
 		}
 		
-		// Call our tool handler and convert the result
 		result, err := tool.Handler().Handle(ctx, args)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -312,13 +290,11 @@ func (a *Mark3LabsAdapter) registerToolWithServer(tool mcpintf.Tool) error {
 			return mcp.NewToolResultError(errorMsg), nil
 		}
 
-		// Convert successful result (simplified)
 		contents := result.GetContent()
 		if len(contents) == 0 {
 			return mcp.NewToolResultText(""), nil
 		}
 
-		// Return first content as text
 		firstContent := contents[0]
 		return mcp.NewToolResultText(firstContent.GetText()), nil
 	}
@@ -327,7 +303,6 @@ func (a *Mark3LabsAdapter) registerToolWithServer(tool mcpintf.Tool) error {
 	return nil
 }
 
-// registerResourceWithServer registers a resource with the underlying mark3labs server
 func (a *Mark3LabsAdapter) registerResourceWithServer(resource mcpintf.Resource) error {
 	mcpResource := mcp.NewResource(
 		resource.URI(),
@@ -336,14 +311,12 @@ func (a *Mark3LabsAdapter) registerResourceWithServer(resource mcpintf.Resource)
 		mcp.WithMIMEType(resource.MimeType()),
 	)
 
-	// Create a simple handler adapter
 	handler := func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 		content, err := resource.Handler().Read(ctx, request.Params.URI)
 		if err != nil {
 			return nil, err
 		}
 
-		// Convert our ResourceContent to mark3labs format (simplified)
 		var results []mcp.ResourceContents
 		for _, c := range content.GetContent() {
 			if c.Type() == "text" {

@@ -13,8 +13,6 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// Mock implementations for testing
-
 type mockResourceContent struct {
 	content  []mcp.Content
 	mimeType string
@@ -326,25 +324,21 @@ func TestDefaultResourceRegistry_StartStop(t *testing.T) {
 	registry := createTestResourceRegistry()
 	ctx := context.Background()
 
-	// Start registry
 	err := registry.Start(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
 	}
 
-	// Check health
 	health := registry.Health()
 	if health.Status != "healthy" {
 		t.Errorf("Expected healthy status, got '%s'", health.Status)
 	}
 
-	// Stop registry
 	err = registry.Stop(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error stopping registry, got: %v", err)
 	}
 
-	// Check health after stop
 	health = registry.Health()
 	if health.Status != "stopped" {
 		t.Errorf("Expected stopped status, got '%s'", health.Status)
@@ -355,7 +349,6 @@ func TestDefaultResourceRegistry_LoadResources(t *testing.T) {
 	registry := createTestResourceRegistry()
 	ctx := context.Background()
 
-	// Start registry
 	err := registry.Start(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
@@ -371,7 +364,6 @@ func TestDefaultResourceRegistry_LoadResources(t *testing.T) {
 		}
 	}
 
-	// Load resources
 	err = registry.LoadResources(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error loading resources, got: %v", err)
@@ -390,7 +382,6 @@ func TestDefaultResourceRegistry_ValidateResources(t *testing.T) {
 	registry := createTestResourceRegistry()
 	ctx := context.Background()
 
-	// Start registry and register resources
 	err := registry.Start(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
@@ -407,13 +398,11 @@ func TestDefaultResourceRegistry_ValidateResources(t *testing.T) {
 		t.Fatalf("Expected no error loading resources, got: %v", err)
 	}
 
-	// Validate resources
 	err = registry.ValidateResources(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error validating resources, got: %v", err)
 	}
 
-	// Check resource status
 	info := registry.List()
 	if len(info) != 1 {
 		t.Fatalf("Expected 1 resource, got %d", len(info))
@@ -429,7 +418,6 @@ func TestDefaultResourceRegistry_TransitionStatus(t *testing.T) {
 	ctx := context.Background()
 	factory := createTestResourceFactory("file:///test/resource.txt")
 
-	// Start registry and register resource
 	err := registry.Start(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
@@ -440,13 +428,11 @@ func TestDefaultResourceRegistry_TransitionStatus(t *testing.T) {
 		t.Fatalf("Expected no error registering resource, got: %v", err)
 	}
 
-	// Test valid transition
 	err = registry.TransitionStatus("file:///test/resource.txt", ResourceStatusLoaded)
 	if err != nil {
 		t.Fatalf("Expected no error transitioning status, got: %v", err)
 	}
 
-	// Verify status changed
 	info := registry.List()
 	if info[0].Status != ResourceStatusLoaded {
 		t.Errorf("Expected status to be loaded, got '%s'", info[0].Status)
@@ -468,7 +454,6 @@ func TestDefaultResourceRegistry_RefreshResource(t *testing.T) {
 	ctx := context.Background()
 	factory := createTestResourceFactory("file:///test/resource.txt")
 
-	// Start registry and register resource
 	err := registry.Start(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
@@ -479,7 +464,6 @@ func TestDefaultResourceRegistry_RefreshResource(t *testing.T) {
 		t.Fatalf("Expected no error registering resource, got: %v", err)
 	}
 
-	// Load and activate resource
 	err = registry.LoadResources(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error loading resources, got: %v", err)
@@ -490,7 +474,6 @@ func TestDefaultResourceRegistry_RefreshResource(t *testing.T) {
 		t.Fatalf("Expected no error validating resources, got: %v", err)
 	}
 
-	// Refresh resource
 	err = registry.RefreshResource(ctx, "file:///test/resource.txt")
 	if err != nil {
 		t.Fatalf("Expected no error refreshing resource, got: %v", err)
@@ -506,7 +489,6 @@ func TestDefaultResourceRegistry_ConcurrentAccess(t *testing.T) {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
 	}
 
-	// Number of concurrent operations
 	concurrency := 50
 	var wg sync.WaitGroup
 	errors := make(chan error, concurrency*3)
@@ -555,7 +537,6 @@ func TestDefaultResourceRegistry_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 	close(errors)
 
-	// Check for errors
 	for err := range errors {
 		t.Errorf("Concurrent operation error: %v", err)
 	}
@@ -571,13 +552,11 @@ func TestDefaultResourceRegistry_Health(t *testing.T) {
 	registry := createTestResourceRegistry()
 	ctx := context.Background()
 
-	// Health when stopped
 	health := registry.Health()
 	if health.Status != "stopped" {
 		t.Errorf("Expected stopped status, got '%s'", health.Status)
 	}
 
-	// Start and add resources
 	err := registry.Start(ctx)
 	if err != nil {
 		t.Fatalf("Expected no error starting registry, got: %v", err)
@@ -599,7 +578,6 @@ func TestDefaultResourceRegistry_Health(t *testing.T) {
 		t.Fatalf("Expected no error validating resources, got: %v", err)
 	}
 
-	// Health when running with active resources
 	health = registry.Health()
 	if health.Status != "healthy" {
 		t.Errorf("Expected healthy status, got '%s'", health.Status)
@@ -651,7 +629,6 @@ func TestDefaultResourceRegistry_ErrorHandling(t *testing.T) {
 		t.Fatalf("Expected no error registering factory, got: %v", err)
 	}
 
-	// Loading should handle the error gracefully
 	err = registry.LoadResources(ctx)
 	if err == nil {
 		t.Error("Expected error loading resources with failing factory")

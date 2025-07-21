@@ -8,7 +8,6 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// ResourceStatus represents the current state of a resource
 type ResourceStatus string
 
 const (
@@ -20,7 +19,6 @@ const (
 	ResourceStatusDisabled   ResourceStatus = "disabled"
 )
 
-// ResourceInfo provides metadata about available resources
 type ResourceInfo struct {
 	URI          string            `json:"uri"`
 	Name         string            `json:"name"`
@@ -33,7 +31,6 @@ type ResourceInfo struct {
 	Metadata     map[string]string `json:"metadata"`
 }
 
-// ResourceConfig represents configuration for a specific resource
 type ResourceConfig struct {
 	Enabled       bool                   `json:"enabled"`
 	Config        map[string]interface{} `json:"config"`
@@ -41,7 +38,6 @@ type ResourceConfig struct {
 	AccessControl map[string]string      `json:"access_control"`
 }
 
-// CachedContent represents cached resource content with metadata
 type CachedContent struct {
 	Content     mcp.ResourceContent
 	Timestamp   time.Time
@@ -49,7 +45,6 @@ type CachedContent struct {
 	AccessCount int64
 }
 
-// ResourceFactory creates resource instances
 type ResourceFactory interface {
 	URI() string
 	Name() string
@@ -62,7 +57,6 @@ type ResourceFactory interface {
 	Validate(config ResourceConfig) error
 }
 
-// RegistryHealth represents the health status of the resource registry
 type RegistryHealth struct {
 	Status            string              `json:"status"`
 	ResourceCount     int                 `json:"resource_count"`
@@ -76,7 +70,6 @@ type RegistryHealth struct {
 	CircuitBreakers   map[string]string   `json:"circuit_breakers"`
 }
 
-// ResourceRegistry manages the collection of available MCP resources
 type ResourceRegistry interface {
 	// Resource management
 	Register(uri string, factory ResourceFactory) error
@@ -97,7 +90,6 @@ type ResourceRegistry interface {
 	Health() RegistryHealth
 }
 
-// Resource registry errors
 var (
 	ErrResourceNotFound       = fmt.Errorf("resource not found")
 	ErrResourceAlreadyExists  = fmt.Errorf("resource already exists")
@@ -114,7 +106,6 @@ var (
 	ErrRefreshNotAllowed     = fmt.Errorf("resource refresh not allowed")
 )
 
-// ResourceValidationError represents a validation error with details
 type ResourceValidationError struct {
 	Field   string `json:"field"`
 	Value   string `json:"value"`
@@ -125,13 +116,11 @@ func (e ResourceValidationError) Error() string {
 	return fmt.Sprintf("validation error in field '%s' (value: '%s'): %s", e.Field, e.Value, e.Message)
 }
 
-// StatusTransition represents a valid status transition
 type StatusTransition struct {
 	From ResourceStatus
 	To   ResourceStatus
 }
 
-// ValidStatusTransitions defines the allowed status transitions
 var ValidStatusTransitions = map[StatusTransition]bool{
 	// From registered
 	{ResourceStatusRegistered, ResourceStatusLoaded}:   true,
@@ -157,7 +146,6 @@ var ValidStatusTransitions = map[StatusTransition]bool{
 	{ResourceStatusDisabled, ResourceStatusError}:      true,
 }
 
-// IsValidTransition checks if a status transition is allowed
 func IsValidTransition(from, to ResourceStatus) bool {
 	if from == to {
 		return true // same status is always valid
@@ -165,14 +153,11 @@ func IsValidTransition(from, to ResourceStatus) bool {
 	return ValidStatusTransitions[StatusTransition{From: from, To: to}]
 }
 
-// GetAllowedTransitions returns all valid transitions from a given status
 func GetAllowedTransitions(from ResourceStatus) []ResourceStatus {
 	var allowed []ResourceStatus
 	
-	// Same status is always allowed
 	allowed = append(allowed, from)
 	
-	// Check all possible transitions
 	for transition := range ValidStatusTransitions {
 		if transition.From == from {
 			allowed = append(allowed, transition.To)
@@ -182,7 +167,6 @@ func GetAllowedTransitions(from ResourceStatus) []ResourceStatus {
 	return allowed
 }
 
-// ResourceValidationErrors represents multiple validation errors
 type ResourceValidationErrors []ResourceValidationError
 
 func (e ResourceValidationErrors) Error() string {
@@ -195,7 +179,6 @@ func (e ResourceValidationErrors) Error() string {
 	return fmt.Sprintf("%d validation errors: %s (and %d more)", len(e), e[0].Error(), len(e)-1)
 }
 
-// Add appends a validation error
 func (e *ResourceValidationErrors) Add(field, value, message string) {
 	*e = append(*e, ResourceValidationError{
 		Field:   field,
@@ -204,7 +187,6 @@ func (e *ResourceValidationErrors) Add(field, value, message string) {
 	})
 }
 
-// HasErrors returns true if there are validation errors
 func (e ResourceValidationErrors) HasErrors() bool {
 	return len(e) > 0
 }

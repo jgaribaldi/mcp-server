@@ -11,7 +11,6 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// DefaultResourceRegistry implements ResourceRegistry
 type DefaultResourceRegistry struct {
 	factories        map[string]ResourceFactory
 	circuitFactories map[string]*CircuitBreakerResourceFactory
@@ -30,7 +29,6 @@ type DefaultResourceRegistry struct {
 	cacheMu         sync.RWMutex
 }
 
-// NewDefaultResourceRegistry creates a new resource registry instance
 func NewDefaultResourceRegistry(cfg *config.Config, log *logger.Logger) ResourceRegistry {
 	return &DefaultResourceRegistry{
 		factories:        make(map[string]ResourceFactory),
@@ -44,7 +42,6 @@ func NewDefaultResourceRegistry(cfg *config.Config, log *logger.Logger) Resource
 	}
 }
 
-// Register implements ResourceRegistry.Register
 func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -56,7 +53,6 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		"version", factory.Version(),
 	)
 
-	// Validate resource URI
 	if err := r.validator.ValidateURI(uri); err != nil {
 		r.logger.Error("resource URI validation failed",
 			"uri", uri,
@@ -65,7 +61,6 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		return fmt.Errorf("%w: %v", ErrInvalidResourceURI, err)
 	}
 
-	// Check for duplicate registration
 	if _, exists := r.factories[uri]; exists {
 		r.logger.Error("resource already registered",
 			"uri", uri,
@@ -73,7 +68,6 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		return fmt.Errorf("%w: %s", ErrResourceAlreadyExists, uri)
 	}
 
-	// Validate factory
 	if err := r.validator.ValidateFactory(factory); err != nil {
 		r.logger.Error("resource factory validation failed",
 			"uri", uri,
@@ -82,15 +76,12 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		return fmt.Errorf("%w: %v", ErrResourceValidation, err)
 	}
 
-	// Register factory
 	r.factories[uri] = factory
 
-	// Create circuit breaker wrapper
 	circuitConfig := DefaultCircuitBreakerConfig()
 	circuitFactory := NewCircuitBreakerResourceFactory(factory, circuitConfig)
 	r.circuitFactories[uri] = circuitFactory
 
-	// Create resource info
 	info := ResourceInfo{
 		URI:          factory.URI(),
 		Name:         factory.Name(),
@@ -112,26 +103,22 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 	return nil
 }
 
-// Unregister implements ResourceRegistry.Unregister
 func (r *DefaultResourceRegistry) Unregister(uri string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.logger.Info("unregistering resource", "uri", uri)
 
-	// Check if resource exists
 	if _, exists := r.factories[uri]; !exists {
 		r.logger.Warn("attempted to unregister non-existent resource", "uri", uri)
 		return fmt.Errorf("%w: %s", ErrResourceNotFound, uri)
 	}
 
-	// Remove from all maps
 	delete(r.factories, uri)
 	delete(r.circuitFactories, uri)
 	delete(r.resources, uri)
 	delete(r.resourceInfo, uri)
 
-	// Clear cache
 	r.cacheMu.Lock()
 	delete(r.cache, uri)
 	r.cacheMu.Unlock()
@@ -140,31 +127,25 @@ func (r *DefaultResourceRegistry) Unregister(uri string) error {
 	return nil
 }
 
-// Get implements ResourceRegistry.Get
 func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 	r.mu.RLock()
 
-	// Check if resource instance exists
 	if resource, exists := r.resources[uri]; exists {
 		r.mu.RUnlock()
 		return resource, nil
 	}
 
-	// Check if factory exists
 	factory, exists := r.factories[uri]
 	if !exists {
 		r.mu.RUnlock()
 		return nil, fmt.Errorf("%w: %s", ErrResourceNotFound, uri)
 	}
 
-	// Release read lock for resource creation
 	r.mu.RUnlock()
 
-	// Create resource instance
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Get resource configuration
 	resourceConfig := ResourceConfig{
 		Enabled:       true,
 		Config:        make(map[string]interface{}),
@@ -181,7 +162,6 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 		return nil, fmt.Errorf("%w: %v", ErrResourceCreation, err)
 	}
 
-	// Validate created resource
 	if err := r.validator.ValidateResource(resource); err != nil {
 		r.logger.Error("created resource validation failed",
 			"uri", uri,
@@ -190,11 +170,9 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 		return nil, fmt.Errorf("%w: %v", ErrResourceValidation, err)
 	}
 
-	// Store resource instance
 	r.mu.Lock()
 	r.resources[uri] = resource
 	
-	// Update status
 	if info, exists := r.resourceInfo[uri]; exists {
 		if IsValidTransition(info.Status, ResourceStatusLoaded) {
 			info.Status = ResourceStatusLoaded
@@ -210,7 +188,6 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 	return resource, nil
 }
 
-// GetFactory implements ResourceRegistry.GetFactory
 func (r *DefaultResourceRegistry) GetFactory(uri string) (ResourceFactory, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -223,7 +200,6 @@ func (r *DefaultResourceRegistry) GetFactory(uri string) (ResourceFactory, error
 	return factory, nil
 }
 
-// List implements ResourceRegistry.List
 func (r *DefaultResourceRegistry) List() []ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -236,7 +212,6 @@ func (r *DefaultResourceRegistry) List() []ResourceInfo {
 	return result
 }
 
-// LoadResources implements ResourceRegistry.LoadResources
 func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	r.mu.RLock()
 	factories := make(map[string]ResourceFactory)
@@ -253,7 +228,6 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	loaded := 0
 
 	for uri, factory := range factories {
-		// Get resource configuration
 		resourceConfig := ResourceConfig{
 			Enabled:       true,
 			Config:        make(map[string]interface{}),
@@ -261,7 +235,6 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 			AccessControl: make(map[string]string),
 		}
 
-		// Create resource instance
 		resource, err := factory.Create(ctx, resourceConfig)
 		if err != nil {
 			errorMsg := fmt.Sprintf("failed to create resource %s: %v", uri, err)
@@ -332,7 +305,6 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	return nil
 }
 
-// ValidateResources implements ResourceRegistry.ValidateResources
 func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 	r.mu.RLock()
 	resources := make(map[string]mcp.Resource)
@@ -390,7 +362,6 @@ func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 	return nil
 }
 
-// TransitionStatus implements ResourceRegistry.TransitionStatus
 func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus ResourceStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -470,7 +441,6 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 	return nil
 }
 
-// RefreshResource implements ResourceRegistry.RefreshResource
 func (r *DefaultResourceRegistry) RefreshResource(ctx context.Context, uri string) error {
 	r.mu.RLock()
 	factory, exists := r.factories[uri]
@@ -530,7 +500,6 @@ func (r *DefaultResourceRegistry) RefreshResource(ctx context.Context, uri strin
 	return nil
 }
 
-// Start implements ResourceRegistry.Start
 func (r *DefaultResourceRegistry) Start(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -549,7 +518,6 @@ func (r *DefaultResourceRegistry) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop implements ResourceRegistry.Stop
 func (r *DefaultResourceRegistry) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -580,7 +548,6 @@ func (r *DefaultResourceRegistry) Stop(ctx context.Context) error {
 	return nil
 }
 
-// Health implements ResourceRegistry.Health
 func (r *DefaultResourceRegistry) Health() RegistryHealth {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

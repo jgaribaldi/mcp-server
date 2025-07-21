@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// EchoService provides pure business logic for message transformation and validation
 type EchoService struct{}
 
 func NewEchoService() *EchoService {

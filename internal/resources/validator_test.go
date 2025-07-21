@@ -268,7 +268,6 @@ func TestResourceValidator_ValidateMimeType(t *testing.T) {
 func TestResourceValidator_ValidateFactory(t *testing.T) {
 	validator := createTestValidator()
 
-	// Valid factory
 	validFactory := &mockResourceFactory{
 		uri:          "file:///test/resource.txt",
 		name:         "Test Resource",
@@ -284,7 +283,6 @@ func TestResourceValidator_ValidateFactory(t *testing.T) {
 		t.Errorf("Expected no error for valid factory, got: %v", err)
 	}
 
-	// Factory with invalid URI
 	invalidURIFactory := &mockResourceFactory{
 		uri:          "invalid-uri",
 		name:         "Test Resource",
@@ -300,7 +298,6 @@ func TestResourceValidator_ValidateFactory(t *testing.T) {
 		t.Error("Expected error for factory with invalid URI, got nil")
 	}
 
-	// Factory with empty name
 	emptyNameFactory := &mockResourceFactory{
 		uri:          "file:///test/resource.txt",
 		name:         "",
@@ -316,7 +313,6 @@ func TestResourceValidator_ValidateFactory(t *testing.T) {
 		t.Error("Expected error for factory with empty name, got nil")
 	}
 
-	// Factory with empty description
 	emptyDescFactory := &mockResourceFactory{
 		uri:          "file:///test/resource.txt",
 		name:         "Test Resource",
@@ -332,7 +328,6 @@ func TestResourceValidator_ValidateFactory(t *testing.T) {
 		t.Error("Expected error for factory with empty description, got nil")
 	}
 
-	// Factory with no capabilities
 	noCapabilitiesFactory := &mockResourceFactory{
 		uri:          "file:///test/resource.txt",
 		name:         "Test Resource",
@@ -352,7 +347,6 @@ func TestResourceValidator_ValidateFactory(t *testing.T) {
 func TestResourceValidator_ValidateResource(t *testing.T) {
 	validator := createTestValidator()
 
-	// Valid resource
 	validResource := &mockResource{
 		uri:         "file:///test/resource.txt",
 		name:        "Test Resource",
@@ -366,7 +360,6 @@ func TestResourceValidator_ValidateResource(t *testing.T) {
 		t.Errorf("Expected no error for valid resource, got: %v", err)
 	}
 
-	// Resource with invalid URI
 	invalidURIResource := &mockResource{
 		uri:         "invalid-uri",
 		name:        "Test Resource",
@@ -380,7 +373,6 @@ func TestResourceValidator_ValidateResource(t *testing.T) {
 		t.Error("Expected error for resource with invalid URI, got nil")
 	}
 
-	// Resource with nil handler
 	nilHandlerResource := &mockResource{
 		uri:         "file:///test/resource.txt",
 		name:        "Test Resource",
@@ -398,7 +390,6 @@ func TestResourceValidator_ValidateResource(t *testing.T) {
 func TestResourceValidator_ValidateConfig(t *testing.T) {
 	validator := createTestValidator()
 
-	// Valid config
 	validConfig := ResourceConfig{
 		Enabled:       true,
 		Config:        map[string]interface{}{"key": "value"},
@@ -411,7 +402,6 @@ func TestResourceValidator_ValidateConfig(t *testing.T) {
 		t.Errorf("Expected no error for valid config, got: %v", err)
 	}
 
-	// Config with negative cache timeout
 	negativeCacheConfig := ResourceConfig{
 		Enabled:       true,
 		Config:        map[string]interface{}{"key": "value"},
@@ -424,7 +414,6 @@ func TestResourceValidator_ValidateConfig(t *testing.T) {
 		t.Error("Expected error for config with negative cache timeout, got nil")
 	}
 
-	// Config with too large cache timeout
 	largeCacheConfig := ResourceConfig{
 		Enabled:       true,
 		Config:        map[string]interface{}{"key": "value"},
@@ -437,7 +426,6 @@ func TestResourceValidator_ValidateConfig(t *testing.T) {
 		t.Error("Expected error for config with too large cache timeout, got nil")
 	}
 
-	// Config with empty access control key
 	emptyACKeyConfig := ResourceConfig{
 		Enabled:       true,
 		Config:        map[string]interface{}{"key": "value"},
@@ -450,7 +438,6 @@ func TestResourceValidator_ValidateConfig(t *testing.T) {
 		t.Error("Expected error for config with empty access control key, got nil")
 	}
 
-	// Config with nil config value
 	nilValueConfig := ResourceConfig{
 		Enabled:       true,
 		Config:        map[string]interface{}{"key": nil},
@@ -469,7 +456,6 @@ func TestResourceValidator_ValidateCacheExpiration(t *testing.T) {
 
 	now := time.Now()
 
-	// Valid (not expired) cache
 	validCache := CachedContent{
 		Content:     nil, // Not relevant for this test
 		Timestamp:   now,
@@ -482,7 +468,6 @@ func TestResourceValidator_ValidateCacheExpiration(t *testing.T) {
 		t.Errorf("Expected no error for valid cache, got: %v", err)
 	}
 
-	// Expired cache
 	expiredCache := CachedContent{
 		Content:     nil, // Not relevant for this test
 		Timestamp:   now.Add(-10 * time.Minute),
@@ -501,9 +486,9 @@ func TestResourceValidator_ValidateCacheExpiration(t *testing.T) {
 }
 
 func TestResourceValidator_ValidateResourceContent(t *testing.T) {
+	// TODO: refactor this test into multiple smaller tests or use table testing
 	validator := createTestValidator()
 
-	// Valid text content
 	textContent := &mockContent{
 		contentType: "text",
 		text:        "Test content",
@@ -518,7 +503,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Errorf("Expected no error for valid text content, got: %v", err)
 	}
 
-	// Valid blob content
 	blobContent := &mockContent{
 		contentType: "blob",
 		blob:        []byte("binary data"),
@@ -533,7 +517,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Errorf("Expected no error for valid blob content, got: %v", err)
 	}
 
-	// Content with invalid MIME type
 	invalidMimeContent := &mockResourceContent{
 		content:  []mcp.Content{textContent},
 		mimeType: "invalid-mime",
@@ -544,7 +527,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Error("Expected error for content with invalid MIME type, got nil")
 	}
 
-	// Empty content
 	emptyContent := &mockResourceContent{
 		content:  []mcp.Content{},
 		mimeType: "text/plain",
@@ -555,7 +537,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Error("Expected error for empty content, got nil")
 	}
 
-	// Content with nil item
 	nilItemContent := &mockResourceContent{
 		content:  []mcp.Content{nil},
 		mimeType: "text/plain",
@@ -566,7 +547,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Error("Expected error for content with nil item, got nil")
 	}
 
-	// Content with empty text
 	emptyTextContent := &mockContent{
 		contentType: "text",
 		text:        "",
@@ -581,7 +561,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Error("Expected error for content with empty text, got nil")
 	}
 
-	// Content with empty blob
 	emptyBlobContent := &mockContent{
 		contentType: "blob",
 		blob:        []byte{},
@@ -596,7 +575,6 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		t.Error("Expected error for content with empty blob, got nil")
 	}
 
-	// Content with unsupported type
 	unsupportedContent := &mockContent{
 		contentType: "unsupported",
 		text:        "test",

@@ -15,7 +15,6 @@ import (
 	"mcp-server/internal/tools"
 )
 
-// HealthResponse represents the health check response
 type HealthResponse struct {
 	Status    string `json:"status"`
 	Timestamp string `json:"timestamp"`
@@ -23,7 +22,6 @@ type HealthResponse struct {
 	Version   string `json:"version"`
 }
 
-// ReadyResponse represents the readiness check response
 type ReadyResponse struct {
 	Status    string `json:"status"`
 	Timestamp string `json:"timestamp"`
@@ -31,7 +29,6 @@ type ReadyResponse struct {
 	Version   string `json:"version"`
 }
 
-// ToolsHealthResponse represents detailed tool health information
 type ToolsHealthResponse struct {
 	Status    string                    `json:"status"`
 	Timestamp string                    `json:"timestamp"`
@@ -39,7 +36,6 @@ type ToolsHealthResponse struct {
 	Tools     map[string]ToolHealthInfo `json:"tools"`
 }
 
-// ToolHealthSummary provides overall tool health statistics
 type ToolHealthSummary struct {
 	Total      int `json:"total"`
 	Active     int `json:"active"`
@@ -49,7 +45,6 @@ type ToolHealthSummary struct {
 	Disabled   int `json:"disabled"`
 }
 
-// ToolHealthInfo provides detailed information about a specific tool
 type ToolHealthInfo struct {
 	Name         string    `json:"name"`
 	Status       string    `json:"status"`
@@ -60,7 +55,6 @@ type ToolHealthInfo struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 }
 
-// MetricsResponse represents registry metrics information
 type MetricsResponse struct {
 	Status           string            `json:"status"`
 	Timestamp        string            `json:"timestamp"`
@@ -70,7 +64,6 @@ type MetricsResponse struct {
 	Performance      PerformanceMetrics `json:"performance"`
 }
 
-// RegistryMetrics represents registry-specific metrics
 type RegistryMetrics struct {
 	TotalTools       int     `json:"total_tools"`
 	ActiveTools      int     `json:"active_tools"`
@@ -82,7 +75,6 @@ type RegistryMetrics struct {
 	UptimeSeconds    int64   `json:"uptime_seconds"`
 }
 
-// AdapterMetrics represents adapter-specific metrics
 type AdapterMetrics struct {
 	Library         string  `json:"library"`
 	Version         string  `json:"version"`
@@ -92,7 +84,6 @@ type AdapterMetrics struct {
 	SuccessRate     float64 `json:"success_rate"`
 }
 
-// ToolMetrics represents tool execution metrics
 type ToolMetrics struct {
 	TotalExecutions int64   `json:"total_executions"`
 	SuccessfulRuns  int64   `json:"successful_runs"`
@@ -100,7 +91,6 @@ type ToolMetrics struct {
 	AverageLatency  float64 `json:"average_latency_ms"`
 }
 
-// PerformanceMetrics represents performance statistics
 type PerformanceMetrics struct {
 	RequestsPerSecond float64 `json:"requests_per_second"`
 	P95LatencyMs      float64 `json:"p95_latency_ms"`
@@ -108,7 +98,6 @@ type PerformanceMetrics struct {
 	MemoryUsageMB     float64 `json:"memory_usage_mb"`
 }
 
-// Server represents the HTTP server
 type Server struct {
 	httpServer       *http.Server
 	mcpServer        mcp.MCPServer
@@ -120,29 +109,23 @@ type Server struct {
 	startTime        time.Time
 }
 
-// New creates a new HTTP server instance
 func New(cfg *config.Config, log *logger.Logger) *Server {
 	mux := http.NewServeMux()
 
-	// Create tool registry using factory
 	toolRegistryFactory := tools.NewRegistryFactory(cfg, log)
 	toolRegistry, err := toolRegistryFactory.CreateRegistry()
 	if err != nil {
 		log.Error("failed to create tool registry", "error", err)
-		// Fall back to default registry for robustness
 		toolRegistry = tools.NewDefaultToolRegistry(cfg, log)
 	}
 
-	// Create resource registry using factory
 	resourceRegistryFactory := resources.NewRegistryFactory(cfg, log)
 	resourceRegistry, err := resourceRegistryFactory.CreateRegistry()
 	if err != nil {
 		log.Error("failed to create resource registry", "error", err)
-		// Fall back to default registry for robustness
 		resourceRegistry = resources.NewDefaultResourceRegistry(cfg, log)
 	}
 
-	// Create MCP server instance
 	mcpImpl := mcp.Implementation{
 		Name:    cfg.Logger.Service,
 		Version: cfg.Logger.Version,
@@ -167,13 +150,10 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 		},
 	}
 
-	// Setup routes (placeholder for now)
 	server.setupRoutes()
-
 	return server
 }
 
-// setupRoutes configures the HTTP routes
 func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
@@ -182,16 +162,13 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/resources/health", s.handleResourcesHealth)
 }
 
-// handleHealth handles health check requests
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Log the health check request
 	s.logger.Info("health check requested",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"remote_addr", r.RemoteAddr,
 	)
 
-	// Create health response
 	response := HealthResponse{
 		Status:    "healthy",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -199,10 +176,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Version:   s.config.Logger.Version,
 	}
 
-	// Set content type
 	w.Header().Set("Content-Type", "application/json")
 
-	// Marshal response to JSON
 	jsonData, err := json.Marshal(response)
 	if err != nil {
 		s.logger.Error("failed to marshal health response",
@@ -212,7 +187,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write successful response
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonData)
 
@@ -222,16 +196,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// handleReady handles readiness check requests
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	// Log the readiness check request
 	s.logger.Info("readiness check requested",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"remote_addr", r.RemoteAddr,
 	)
 
-	// Create readiness response
 	response := ReadyResponse{
 		Status:    "ready",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -239,10 +210,8 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		Version:   s.config.Logger.Version,
 	}
 
-	// Set content type
 	w.Header().Set("Content-Type", "application/json")
 
-	// Marshal response to JSON
 	jsonData, err := json.Marshal(response)
 	if err != nil {
 		s.logger.Error("failed to marshal readiness response",
@@ -252,7 +221,6 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write successful response
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonData)
 
@@ -262,34 +230,27 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// ListenAndServe starts the HTTP server
 func (s *Server) ListenAndServe() error {
 	return s.httpServer.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the HTTP server
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// Close immediately closes the HTTP server
 func (s *Server) Close() error {
 	return s.httpServer.Close()
 }
 
-// StartMCP starts the MCP server
 func (s *Server) StartMCP(ctx context.Context) error {
 	s.logger.Info("Starting MCP server and tool registry")
 	
-	// Start tool registry first
 	if err := s.toolRegistry.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start tool registry: %w", err)
 	}
 	s.logger.Info("Tool registry started successfully")
 	
-	// Start resource registry
 	if err := s.resourceRegistry.Start(ctx); err != nil {
-		// If resource registry fails to start, stop the tool registry
 		if stopErr := s.toolRegistry.Stop(ctx); stopErr != nil {
 			s.logger.Error("failed to stop tool registry after resource registry start failure", "error", stopErr)
 		}
@@ -297,12 +258,9 @@ func (s *Server) StartMCP(ctx context.Context) error {
 	}
 	s.logger.Info("Resource registry started successfully")
 	
-	// Create stdio transport for MCP server
 	transport := mcp.NewStdioTransport()
 	
-	// Start the MCP server
 	if err := s.mcpServer.Start(ctx, transport); err != nil {
-		// If MCP server fails to start, stop the registries
 		if stopErr := s.resourceRegistry.Stop(ctx); stopErr != nil {
 			s.logger.Error("failed to stop resource registry after MCP server start failure", "error", stopErr)
 		}
@@ -316,27 +274,21 @@ func (s *Server) StartMCP(ctx context.Context) error {
 	return nil
 }
 
-// StopMCP stops the MCP server
 func (s *Server) StopMCP(ctx context.Context) error {
 	s.logger.Info("Stopping MCP server and tool registry")
 	
-	// Stop MCP server first
 	if err := s.mcpServer.Stop(ctx); err != nil {
 		s.logger.Error("failed to stop MCP server", "error", err)
-		// Continue to stop registry even if MCP server fails to stop
 	} else {
 		s.logger.Info("MCP server stopped successfully")
 	}
 	
-	// Stop resource registry
 	if err := s.resourceRegistry.Stop(ctx); err != nil {
 		s.logger.Error("failed to stop resource registry", "error", err)
-		// Continue to stop tool registry even if resource registry fails to stop
 	} else {
 		s.logger.Info("Resource registry stopped successfully")
 	}
 	
-	// Stop tool registry
 	if err := s.toolRegistry.Stop(ctx); err != nil {
 		return fmt.Errorf("failed to stop tool registry: %w", err)
 	}
@@ -345,16 +297,12 @@ func (s *Server) StopMCP(ctx context.Context) error {
 	return nil
 }
 
-// IsMCPRunning returns true if the MCP server is running
 func (s *Server) IsMCPRunning() bool {
 	// This is a simple implementation - in a real scenario we might need
 	// to track the running state more carefully
 	return s.mcpServer != nil
 }
 
-// Data Collection Functions - Single responsibility: gather raw data
-
-// collectRegistryData gathers registry health and tool information
 func (s *Server) collectRegistryData() (tools.RegistryHealth, []tools.ToolInfo, resources.RegistryHealth, []resources.ResourceInfo) {
 	toolHealth := s.toolRegistry.Health()
 	toolList := s.toolRegistry.List()
@@ -363,21 +311,16 @@ func (s *Server) collectRegistryData() (tools.RegistryHealth, []tools.ToolInfo, 
 	return toolHealth, toolList, resourceHealth, resourceList
 }
 
-// collectPerformanceData gathers runtime performance statistics
 func (s *Server) collectPerformanceData() runtime.MemStats {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 	return memStats
 }
 
-// collectUptimeData calculates server uptime
 func (s *Server) collectUptimeData() time.Duration {
 	return time.Since(s.startTime)
 }
 
-// Metrics Calculation Functions - Single responsibility: calculate specific metrics
-
-// calculateRegistryMetrics computes registry-specific metrics
 func (s *Server) calculateRegistryMetrics(health tools.RegistryHealth, toolList []tools.ToolInfo, uptime time.Duration) RegistryMetrics {
 	var successRate, errorRate float64
 	if health.ToolCount > 0 {
@@ -408,7 +351,6 @@ func (s *Server) calculateRegistryMetrics(health tools.RegistryHealth, toolList 
 	}
 }
 
-// calculateAdapterMetrics computes adapter-specific metrics
 func (s *Server) calculateAdapterMetrics(health tools.RegistryHealth, successRate float64) AdapterMetrics {
 	return AdapterMetrics{
 		Library:       "mark3labs",
@@ -420,7 +362,6 @@ func (s *Server) calculateAdapterMetrics(health tools.RegistryHealth, successRat
 	}
 }
 
-// calculateToolMetrics computes tool execution metrics
 func (s *Server) calculateToolMetrics(health tools.RegistryHealth) ToolMetrics {
 	return ToolMetrics{
 		TotalExecutions: 0,
@@ -430,7 +371,6 @@ func (s *Server) calculateToolMetrics(health tools.RegistryHealth) ToolMetrics {
 	}
 }
 
-// calculatePerformanceMetrics computes performance statistics
 func (s *Server) calculatePerformanceMetrics(memStats runtime.MemStats) PerformanceMetrics {
 	memoryUsageMB := float64(memStats.Alloc) / 1024 / 1024
 	
@@ -442,7 +382,6 @@ func (s *Server) calculatePerformanceMetrics(memStats runtime.MemStats) Performa
 	}
 }
 
-// determineOverallHealth determines overall server health status
 func (s *Server) determineOverallHealth(registryHealth tools.RegistryHealth) string {
 	if registryHealth.Status == "stopped" {
 		return "degraded"
@@ -453,9 +392,6 @@ func (s *Server) determineOverallHealth(registryHealth tools.RegistryHealth) str
 	return "healthy"
 }
 
-// Business Logic Function - Single responsibility: orchestrate and build response
-
-// buildMetricsResponse collects data and constructs the complete metrics response
 func (s *Server) buildMetricsResponse() MetricsResponse {
 	toolHealth, toolList, resourceHealth, _ := s.collectRegistryData()
 	memStats := s.collectPerformanceData()
@@ -484,19 +420,14 @@ func (s *Server) buildMetricsResponse() MetricsResponse {
 	}
 }
 
-// Tool Health Functions - Single responsibility: tool health data collection and aggregation
-
-// collectToolHealthData gathers detailed tool health information
 func (s *Server) collectToolHealthData() (tools.RegistryHealth, []tools.ToolInfo) {
 	return s.toolRegistry.Health(), s.toolRegistry.List()
 }
 
-// collectResourceHealthData gathers detailed resource health information
 func (s *Server) collectResourceHealthData() (resources.RegistryHealth, []resources.ResourceInfo) {
 	return s.resourceRegistry.Health(), s.resourceRegistry.List()
 }
 
-// buildToolHealthSummary calculates summary statistics from tool list
 func (s *Server) buildToolHealthSummary(toolList []tools.ToolInfo) ToolHealthSummary {
 	summary := ToolHealthSummary{Total: len(toolList)}
 	
@@ -518,7 +449,6 @@ func (s *Server) buildToolHealthSummary(toolList []tools.ToolInfo) ToolHealthSum
 	return summary
 }
 
-// buildToolHealthDetails creates detailed tool health information map
 func (s *Server) buildToolHealthDetails(toolList []tools.ToolInfo, registryHealth tools.RegistryHealth) map[string]ToolHealthInfo {
 	toolDetails := make(map[string]ToolHealthInfo)
 	
@@ -542,7 +472,6 @@ func (s *Server) buildToolHealthDetails(toolList []tools.ToolInfo, registryHealt
 	return toolDetails
 }
 
-// determineToolsOverallHealth determines overall tools health status
 func (s *Server) determineToolsOverallHealth(summary ToolHealthSummary, registryHealth tools.RegistryHealth) string {
 	if registryHealth.Status == "stopped" {
 		return "stopped"
@@ -556,7 +485,6 @@ func (s *Server) determineToolsOverallHealth(summary ToolHealthSummary, registry
 	return "healthy"
 }
 
-// buildToolsHealthResponse orchestrates tools health data collection and response building
 func (s *Server) buildToolsHealthResponse() ToolsHealthResponse {
 	registryHealth, toolList := s.collectToolHealthData()
 	summary := s.buildToolHealthSummary(toolList)
@@ -570,9 +498,6 @@ func (s *Server) buildToolsHealthResponse() ToolsHealthResponse {
 	}
 }
 
-// HTTP Handler Function - Single responsibility: HTTP request/response handling
-
-// handleToolsHealth handles detailed tools health requests
 func (s *Server) handleToolsHealth(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("tools health requested",
 		"method", r.Method,
@@ -602,7 +527,6 @@ func (s *Server) handleToolsHealth(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// ResourcesHealthResponse represents detailed resource health information
 type ResourcesHealthResponse struct {
 	Status    string                        `json:"status"`
 	Timestamp string                        `json:"timestamp"`
@@ -610,7 +534,6 @@ type ResourcesHealthResponse struct {
 	Resources map[string]ResourceHealthInfo `json:"resources"`
 }
 
-// ResourceHealthSummary provides overall resource health statistics
 type ResourceHealthSummary struct {
 	Total      int `json:"total"`
 	Active     int `json:"active"`
@@ -621,7 +544,6 @@ type ResourceHealthSummary struct {
 	Cached     int `json:"cached"`
 }
 
-// ResourceHealthInfo provides detailed information about a specific resource
 type ResourceHealthInfo struct {
 	URI          string    `json:"uri"`
 	Name         string    `json:"name"`
@@ -635,7 +557,6 @@ type ResourceHealthInfo struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 }
 
-// buildResourceHealthSummary calculates summary statistics from resource list
 func (s *Server) buildResourceHealthSummary(resourceList []resources.ResourceInfo, resourceHealth resources.RegistryHealth) ResourceHealthSummary {
 	summary := ResourceHealthSummary{
 		Total:  len(resourceList),
@@ -660,7 +581,6 @@ func (s *Server) buildResourceHealthSummary(resourceList []resources.ResourceInf
 	return summary
 }
 
-// buildResourceHealthDetails creates detailed resource health information map
 func (s *Server) buildResourceHealthDetails(resourceList []resources.ResourceInfo, resourceHealth resources.RegistryHealth) map[string]ResourceHealthInfo {
 	resourceDetails := make(map[string]ResourceHealthInfo)
 	
@@ -687,7 +607,6 @@ func (s *Server) buildResourceHealthDetails(resourceList []resources.ResourceInf
 	return resourceDetails
 }
 
-// determineResourcesOverallHealth determines overall resources health status
 func (s *Server) determineResourcesOverallHealth(summary ResourceHealthSummary, resourceHealth resources.RegistryHealth) string {
 	if resourceHealth.Status == "stopped" {
 		return "stopped"
@@ -701,7 +620,6 @@ func (s *Server) determineResourcesOverallHealth(summary ResourceHealthSummary, 
 	return "healthy"
 }
 
-// buildResourcesHealthResponse orchestrates resources health data collection and response building
 func (s *Server) buildResourcesHealthResponse() ResourcesHealthResponse {
 	resourceHealth, resourceList := s.collectResourceHealthData()
 	summary := s.buildResourceHealthSummary(resourceList, resourceHealth)
@@ -715,7 +633,6 @@ func (s *Server) buildResourcesHealthResponse() ResourcesHealthResponse {
 	}
 }
 
-// handleResourcesHealth handles detailed resources health requests
 func (s *Server) handleResourcesHealth(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("resources health requested",
 		"method", r.Method,
@@ -746,7 +663,6 @@ func (s *Server) handleResourcesHealth(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// handleMetrics handles metrics endpoint requests
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("metrics requested",
 		"method", r.Method,
@@ -775,12 +691,10 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// ToolRegistry returns the tool registry for external tool registration
 func (s *Server) ToolRegistry() tools.ToolRegistry {
 	return s.toolRegistry
 }
 
-// ResourceRegistry returns the resource registry for external resource registration
 func (s *Server) ResourceRegistry() resources.ResourceRegistry {
 	return s.resourceRegistry
 }

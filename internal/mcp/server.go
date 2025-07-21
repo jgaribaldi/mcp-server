@@ -13,7 +13,6 @@ import (
 	"mcp-server/internal/logger"
 )
 
-// Server implements MCPServer using mark3labs/mcp-go
 type Server struct {
 	impl        Implementation
 	logger      *logger.Logger
@@ -26,7 +25,6 @@ type Server struct {
 	transport   Transport
 }
 
-// NewServer creates a new MCP server instance
 func NewServer(impl Implementation, cfg *config.Config, log *logger.Logger) MCPServer {
 	return &Server{
 		impl:      impl,
@@ -37,7 +35,6 @@ func NewServer(impl Implementation, cfg *config.Config, log *logger.Logger) MCPS
 	}
 }
 
-// Start implements MCPServer.Start
 func (s *Server) Start(ctx context.Context, transport Transport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -79,7 +76,6 @@ func (s *Server) Start(ctx context.Context, transport Transport) error {
 	return nil
 }
 
-// Stop implements MCPServer.Stop
 func (s *Server) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -105,7 +101,6 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// AddTool implements MCPServer.AddTool
 func (s *Server) AddTool(tool Tool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,7 +116,6 @@ func (s *Server) AddTool(tool Tool) error {
 	return nil
 }
 
-// AddResource implements MCPServer.AddResource
 func (s *Server) AddResource(resource Resource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -137,18 +131,15 @@ func (s *Server) AddResource(resource Resource) error {
 	return nil
 }
 
-// GetImplementation implements MCPServer.GetImplementation
 func (s *Server) GetImplementation() Implementation {
 	return s.impl
 }
 
-// registerTool registers a tool with the underlying mark3labs MCP server
 func (s *Server) registerTool(tool Tool) error {
 	options := []mcp.ToolOption{
 		mcp.WithDescription(tool.Description()),
 	}
 
-	// Parse and add parameters if available
 	if tool.Parameters() != nil {
 		var params map[string]interface{}
 		if err := json.Unmarshal(tool.Parameters(), &params); err != nil {
@@ -192,9 +183,7 @@ func (s *Server) registerTool(tool Tool) error {
 	return nil
 }
 
-// registerResource registers a resource with the underlying mark3labs MCP server
 func (s *Server) registerResource(resource Resource) error {
-	// Create mark3labs resource definition
 	mcpResource := mcp.NewResource(
 		resource.URI(),
 		resource.Name(),
@@ -202,16 +191,13 @@ func (s *Server) registerResource(resource Resource) error {
 		mcp.WithMIMEType(resource.MimeType()),
 	)
 
-	// Create handler adapter
 	handler := s.createResourceHandlerAdapter(resource.Handler())
 
-	// Register with mark3labs server
 	s.mcpServer.AddResource(mcpResource, handler)
 
 	return nil
 }
 
-// createToolHandlerAdapter adapts our ToolHandler interface to mark3labs handler
 func (s *Server) createToolHandlerAdapter(handler ToolHandler) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		s.logger.Info("executing tool",
@@ -229,14 +215,12 @@ func (s *Server) createToolHandlerAdapter(handler ToolHandler) func(context.Cont
 			args = argsBytes
 		}
 
-		// Call our handler
 		result, err := handler.Handle(ctx, args)
 		if err != nil {
 			s.logger.Error("tool execution failed", "error", err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		// Handle error results
 		if result.IsError() {
 			errorMsg := "Tool execution failed"
 			if result.GetError() != nil {
@@ -246,7 +230,6 @@ func (s *Server) createToolHandlerAdapter(handler ToolHandler) func(context.Cont
 			return mcp.NewToolResultError(errorMsg), nil
 		}
 
-		// Convert successful result
 		contents := result.GetContent()
 		if len(contents) == 0 {
 			return mcp.NewToolResultText(""), nil
@@ -259,26 +242,22 @@ func (s *Server) createToolHandlerAdapter(handler ToolHandler) func(context.Cont
 			return mcp.NewToolResultText(firstContent.GetText()), nil
 		}
 
-		// For blob content, convert to text representation
 		return mcp.NewToolResultText(firstContent.GetText()), nil
 	}
 }
 
-// createResourceHandlerAdapter adapts our ResourceHandler interface to mark3labs handler
 func (s *Server) createResourceHandlerAdapter(handler ResourceHandler) func(context.Context, mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 	return func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 		s.logger.Info("reading resource",
 			"uri", request.Params.URI,
 		)
 
-		// Call our handler
 		content, err := handler.Read(ctx, request.Params.URI)
 		if err != nil {
 			s.logger.Error("resource read failed", "error", err)
 			return nil, err
 		}
 
-		// Convert our ResourceContent to mark3labs format
 		var results []mcp.ResourceContents
 
 		for _, c := range content.GetContent() {
@@ -314,7 +293,6 @@ func (s *Server) createResourceHandlerAdapter(handler ResourceHandler) func(cont
 	}
 }
 
-// Serve starts the MCP server with the configured transport
 func (s *Server) Serve(ctx context.Context) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

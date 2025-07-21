@@ -12,13 +12,11 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// ResourceValidator validates resource configurations and instances
 type ResourceValidator struct {
 	config *config.Config
 	logger *logger.Logger
 }
 
-// NewResourceValidator creates a new resource validator
 func NewResourceValidator(cfg *config.Config, log *logger.Logger) *ResourceValidator {
 	return &ResourceValidator{
 		config: cfg,
@@ -26,7 +24,6 @@ func NewResourceValidator(cfg *config.Config, log *logger.Logger) *ResourceValid
 	}
 }
 
-// ValidateURI validates resource URI format and pattern
 func (v *ResourceValidator) ValidateURI(uri string) error {
 	v.logger.Debug("validating resource URI", "uri", uri)
 
@@ -34,18 +31,15 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 		return fmt.Errorf("URI cannot be empty")
 	}
 
-	// Parse URI to validate format
 	parsedURI, err := url.Parse(uri)
 	if err != nil {
 		return fmt.Errorf("invalid URI format: %w", err)
 	}
 
-	// Validate scheme
 	if parsedURI.Scheme == "" {
 		return fmt.Errorf("URI must have a scheme (e.g., file://, config://, api://)")
 	}
 
-	// Validate supported schemes
 	supportedSchemes := map[string]bool{
 		"file":   true,
 		"config": true,
@@ -59,18 +53,15 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 		return fmt.Errorf("unsupported URI scheme: %s (supported: file, config, api, custom, http, https)", parsedURI.Scheme)
 	}
 
-	// Validate URI length
 	if len(uri) > 2048 {
 		return fmt.Errorf("URI too long: %d characters (max: 2048)", len(uri))
 	}
 
-	// Additional scheme-specific validation
 	switch parsedURI.Scheme {
 	case "file":
 		if parsedURI.Path == "" {
 			return fmt.Errorf("file URI must have a path")
 		}
-		// Validate no dangerous path traversal
 		if strings.Contains(parsedURI.Path, "..") {
 			return fmt.Errorf("path traversal not allowed in file URI")
 		}
@@ -88,7 +79,6 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 	return nil
 }
 
-// ValidateName validates resource name
 func (v *ResourceValidator) ValidateName(name string) error {
 	if name == "" {
 		return fmt.Errorf("name cannot be empty")
@@ -98,7 +88,6 @@ func (v *ResourceValidator) ValidateName(name string) error {
 		return fmt.Errorf("name too long: %d characters (max: 255)", len(name))
 	}
 
-	// Name should contain only alphanumeric characters, hyphens, underscores, and spaces
 	validName := regexp.MustCompile(`^[a-zA-Z0-9\-_ ]+$`)
 	if !validName.MatchString(name) {
 		return fmt.Errorf("name contains invalid characters (allowed: a-z, A-Z, 0-9, -, _, space)")
@@ -107,13 +96,11 @@ func (v *ResourceValidator) ValidateName(name string) error {
 	return nil
 }
 
-// ValidateMimeType validates MIME type format
 func (v *ResourceValidator) ValidateMimeType(mimeType string) error {
 	if mimeType == "" {
 		return fmt.Errorf("MIME type cannot be empty")
 	}
 
-	// Basic MIME type format validation
 	parts := strings.Split(mimeType, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid MIME type format: expected 'type/subtype'")
@@ -123,7 +110,6 @@ func (v *ResourceValidator) ValidateMimeType(mimeType string) error {
 		return fmt.Errorf("MIME type parts cannot be empty")
 	}
 
-	// Common MIME types validation
 	validTypes := map[string]bool{
 		"text":        true,
 		"application": true,
@@ -141,23 +127,19 @@ func (v *ResourceValidator) ValidateMimeType(mimeType string) error {
 	return nil
 }
 
-// ValidateFactory validates a resource factory
 func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 	v.logger.Debug("validating resource factory", "uri", factory.URI())
 
 	var errors ResourceValidationErrors
 
-	// Validate URI
 	if err := v.ValidateURI(factory.URI()); err != nil {
 		errors.Add("uri", factory.URI(), err.Error())
 	}
 
-	// Validate name
 	if err := v.ValidateName(factory.Name()); err != nil {
 		errors.Add("name", factory.Name(), err.Error())
 	}
 
-	// Validate description
 	if factory.Description() == "" {
 		errors.Add("description", "", "description cannot be empty")
 	} else if len(factory.Description()) > 1000 {
@@ -165,12 +147,10 @@ func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 			fmt.Sprintf("description too long: %d characters (max: 1000)", len(factory.Description())))
 	}
 
-	// Validate MIME type
 	if err := v.ValidateMimeType(factory.MimeType()); err != nil {
 		errors.Add("mime_type", factory.MimeType(), err.Error())
 	}
 
-	// Validate version
 	if factory.Version() == "" {
 		errors.Add("version", "", "version cannot be empty")
 	} else if len(factory.Version()) > 50 {
@@ -178,7 +158,6 @@ func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 			fmt.Sprintf("version too long: %d characters (max: 50)", len(factory.Version())))
 	}
 
-	// Validate capabilities
 	capabilities := factory.Capabilities()
 	if len(capabilities) == 0 {
 		errors.Add("capabilities", "", "at least one capability must be specified")
@@ -193,7 +172,6 @@ func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 		}
 	}
 
-	// Validate tags
 	tags := factory.Tags()
 	for i, tag := range tags {
 		if tag == "" {
@@ -215,33 +193,27 @@ func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 	return nil
 }
 
-// ValidateResource validates a resource instance
 func (v *ResourceValidator) ValidateResource(resource mcp.Resource) error {
 	v.logger.Debug("validating resource instance", "uri", resource.URI())
 
 	var errors ResourceValidationErrors
 
-	// Validate URI
 	if err := v.ValidateURI(resource.URI()); err != nil {
 		errors.Add("uri", resource.URI(), err.Error())
 	}
 
-	// Validate name
 	if err := v.ValidateName(resource.Name()); err != nil {
 		errors.Add("name", resource.Name(), err.Error())
 	}
 
-	// Validate description
 	if resource.Description() == "" {
 		errors.Add("description", "", "description cannot be empty")
 	}
 
-	// Validate MIME type
 	if err := v.ValidateMimeType(resource.MimeType()); err != nil {
 		errors.Add("mime_type", resource.MimeType(), err.Error())
 	}
 
-	// Validate handler exists
 	if resource.Handler() == nil {
 		errors.Add("handler", "", "resource handler cannot be nil")
 	}
@@ -257,13 +229,11 @@ func (v *ResourceValidator) ValidateResource(resource mcp.Resource) error {
 	return nil
 }
 
-// ValidateConfig validates resource configuration
 func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
 	v.logger.Debug("validating resource configuration")
 
 	var errors ResourceValidationErrors
 
-	// Validate cache timeout
 	if config.CacheTimeout < 0 {
 		errors.Add("cache_timeout", fmt.Sprintf("%d", config.CacheTimeout), 
 			"cache timeout cannot be negative")
@@ -272,7 +242,6 @@ func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
 			"cache timeout too large: maximum 86400 seconds (24 hours)")
 	}
 
-	// Validate access control
 	for key, value := range config.AccessControl {
 		if key == "" {
 			errors.Add("access_control", "", "access control key cannot be empty")
@@ -282,12 +251,10 @@ func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
 		}
 	}
 
-	// Validate configuration parameters
 	for key, value := range config.Config {
 		if key == "" {
 			errors.Add("config", "", "configuration key cannot be empty")
 		}
-		// Basic value validation
 		if value == nil {
 			errors.Add("config", key, "configuration value cannot be nil")
 		}
@@ -302,7 +269,6 @@ func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
 	return nil
 }
 
-// ValidateCacheExpiration checks if cached content has expired
 func (v *ResourceValidator) ValidateCacheExpiration(cached CachedContent) error {
 	now := time.Now()
 	if now.After(cached.ExpiresAt) {
@@ -311,34 +277,28 @@ func (v *ResourceValidator) ValidateCacheExpiration(cached CachedContent) error 
 	return nil
 }
 
-// ValidateResourceContent validates resource content
 func (v *ResourceValidator) ValidateResourceContent(content mcp.ResourceContent) error {
 	v.logger.Debug("validating resource content")
 
-	// Validate MIME type
 	if err := v.ValidateMimeType(content.GetMimeType()); err != nil {
 		return fmt.Errorf("invalid content MIME type: %w", err)
 	}
 
-	// Validate content exists
 	contentItems := content.GetContent()
 	if len(contentItems) == 0 {
 		return fmt.Errorf("resource content cannot be empty")
 	}
 
-	// Validate each content item
 	for i, item := range contentItems {
 		if item == nil {
 			return fmt.Errorf("content item %d cannot be nil", i)
 		}
 
-		// Validate content type
 		contentType := item.Type()
 		if contentType == "" {
 			return fmt.Errorf("content item %d must have a type", i)
 		}
 
-		// Type-specific validation
 		switch contentType {
 		case "text":
 			if item.GetText() == "" {

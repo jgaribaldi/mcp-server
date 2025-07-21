@@ -9,12 +9,10 @@ import (
 	"github.com/lmittmann/tint"
 )
 
-// Logger holds the structured logger instance
 type Logger struct {
 	*slog.Logger
 }
 
-// Config holds logger configuration
 type Config struct {
 	Level     string
 	Format    string
@@ -23,7 +21,6 @@ type Config struct {
 	UseEmojis bool
 }
 
-// EmojiHandler wraps another handler to add emoji prefixes to log messages
 type EmojiHandler struct {
 	handler slog.Handler
 	emojis  map[slog.Level]string
@@ -33,10 +30,10 @@ func NewEmojiHandler(h slog.Handler) *EmojiHandler {
 	return &EmojiHandler{
 		handler: h,
 		emojis: map[slog.Level]string{
-			slog.LevelDebug: "🔍",  // Magnifying glass - investigating/debugging
-			slog.LevelInfo:  "✅",  // Green tick - success/normal operations
-			slog.LevelWarn:  "⚠️",   // Warning sign - caution
-			slog.LevelError: "❌",  // Red X - errors/failures
+			slog.LevelDebug: "🔍",
+			slog.LevelInfo:  "✅",
+			slog.LevelWarn:  "⚠️",
+			slog.LevelError: "❌",
 		},
 	}
 }
@@ -65,7 +62,6 @@ func (h *EmojiHandler) WithGroup(name string) slog.Handler {
 	return &EmojiHandler{handler: h.handler.WithGroup(name), emojis: h.emojis}
 }
 
-// New creates a new structured logger with the given configuration
 func New(cfg Config) (*Logger, error) {
 	var level slog.Level
 	switch cfg.Level {
@@ -137,7 +133,6 @@ func New(cfg Config) (*Logger, error) {
 	return &Logger{Logger: logger}, nil
 }
 
-// NewDefault creates a logger with default configuration
 func NewDefault() (*Logger, error) {
 	return New(Config{
 		Level:     "info",

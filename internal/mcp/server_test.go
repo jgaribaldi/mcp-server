@@ -13,9 +13,6 @@ import (
 	"mcp-server/internal/logger"
 )
 
-// Test helpers
-
-// createTestLogger creates a logger for testing
 func createTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	log, err := logger.New(logger.Config{
@@ -30,9 +27,6 @@ func createTestLogger(t *testing.T) *logger.Logger {
 	return log
 }
 
-// Mock implementations for testing
-
-// Mock tool implementation
 type mockTool struct {
 	name        string
 	description string
@@ -45,7 +39,6 @@ func (m *mockTool) Description() string       { return m.description }
 func (m *mockTool) Parameters() json.RawMessage { return m.parameters }
 func (m *mockTool) Handler() ToolHandler      { return m.handler }
 
-// Mock tool handler
 type mockToolHandler struct {
 	handleFunc func(ctx context.Context, params json.RawMessage) (ToolResult, error)
 }
@@ -57,7 +50,6 @@ func (m *mockToolHandler) Handle(ctx context.Context, params json.RawMessage) (T
 	return NewToolResult(NewTextContent("mock result")), nil
 }
 
-// Mock resource implementation
 type mockResource struct {
 	uri         string
 	name        string
@@ -72,7 +64,6 @@ func (m *mockResource) Description() string    { return m.description }
 func (m *mockResource) MimeType() string       { return m.mimeType }
 func (m *mockResource) Handler() ResourceHandler { return m.handler }
 
-// Mock resource handler
 type mockResourceHandler struct {
 	readFunc func(ctx context.Context, uri string) (ResourceContent, error)
 }
@@ -84,7 +75,6 @@ func (m *mockResourceHandler) Read(ctx context.Context, uri string) (ResourceCon
 	return NewResourceContent("text/plain", NewTextContent("mock resource content")), nil
 }
 
-// Test server creation
 func TestNewServer(t *testing.T) {
 	impl := Implementation{
 		Name:    "test-server",
@@ -98,7 +88,6 @@ func TestNewServer(t *testing.T) {
 		t.Fatal("NewServer returned nil")
 	}
 
-	// Verify implementation
 	if server.GetImplementation().Name != "test-server" {
 		t.Errorf("Expected name 'test-server', got '%s'", server.GetImplementation().Name)
 	}
@@ -108,7 +97,6 @@ func TestNewServer(t *testing.T) {
 	}
 }
 
-// Test server lifecycle
 func TestServerLifecycle(t *testing.T) {
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
@@ -118,45 +106,37 @@ func TestServerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	transport := NewTestableStdioTransport(nil, nil)
 
-	// Test start
 	if err := server.Start(ctx, transport); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Verify server is running
 	if !server.running {
 		t.Error("Expected server to be running")
 	}
 
-	// Test double start (should fail)
 	if err := server.Start(ctx, transport); err == nil {
 		t.Error("Expected error on double start")
 	}
 
-	// Test stop
 	if err := server.Stop(ctx); err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
 
-	// Verify server is stopped
 	if server.running {
 		t.Error("Expected server to be stopped")
 	}
 
-	// Test double stop (should not fail)
 	if err := server.Stop(ctx); err != nil {
 		t.Errorf("Stop failed on already stopped server: %v", err)
 	}
 }
 
-// Test tool management in server
 func TestServerToolManagement(t *testing.T) {
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
 	log := createTestLogger(t)
 	server := NewServer(impl, cfg, log).(*Server)
 
-	// Create mock tool
 	handler := &mockToolHandler{}
 	tool := &mockTool{
 		name:        "test-tool",
@@ -165,12 +145,10 @@ func TestServerToolManagement(t *testing.T) {
 		handler:     handler,
 	}
 
-	// Test adding tool before server start
 	if err := server.AddTool(tool); err != nil {
 		t.Fatalf("AddTool failed: %v", err)
 	}
 
-	// Verify tool was stored
 	if len(server.tools) != 1 {
 		t.Errorf("Expected 1 tool, got %d", len(server.tools))
 	}
@@ -179,14 +157,12 @@ func TestServerToolManagement(t *testing.T) {
 		t.Error("Tool was not stored correctly")
 	}
 
-	// Start server
 	ctx := context.Background()
 	transport := NewTestableStdioTransport(nil, nil)
 	if err := server.Start(ctx, transport); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Test adding tool after server start
 	handler2 := &mockToolHandler{}
 	tool2 := &mockTool{
 		name:        "test-tool-2",
@@ -198,25 +174,21 @@ func TestServerToolManagement(t *testing.T) {
 		t.Fatalf("AddTool after start failed: %v", err)
 	}
 
-	// Verify both tools are stored
 	if len(server.tools) != 2 {
 		t.Errorf("Expected 2 tools, got %d", len(server.tools))
 	}
 
-	// Stop server
 	if err := server.Stop(ctx); err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
 }
 
-// Test resource management in server
 func TestServerResourceManagement(t *testing.T) {
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
 	log := createTestLogger(t)
 	server := NewServer(impl, cfg, log).(*Server)
 
-	// Create mock resource
 	handler := &mockResourceHandler{}
 	resource := &mockResource{
 		uri:         "file://test.txt",
@@ -226,12 +198,10 @@ func TestServerResourceManagement(t *testing.T) {
 		handler:     handler,
 	}
 
-	// Test adding resource before server start
 	if err := server.AddResource(resource); err != nil {
 		t.Fatalf("AddResource failed: %v", err)
 	}
 
-	// Verify resource was stored
 	if len(server.resources) != 1 {
 		t.Errorf("Expected 1 resource, got %d", len(server.resources))
 	}
@@ -240,14 +210,12 @@ func TestServerResourceManagement(t *testing.T) {
 		t.Error("Resource was not stored correctly")
 	}
 
-	// Start server
 	ctx := context.Background()
 	transport := NewTestableStdioTransport(nil, nil)
 	if err := server.Start(ctx, transport); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Test adding resource after server start
 	handler2 := &mockResourceHandler{}
 	resource2 := &mockResource{
 		uri:         "file://test2.txt",
@@ -261,18 +229,15 @@ func TestServerResourceManagement(t *testing.T) {
 		t.Fatalf("AddResource after start failed: %v", err)
 	}
 
-	// Verify both resources are stored
 	if len(server.resources) != 2 {
 		t.Errorf("Expected 2 resources, got %d", len(server.resources))
 	}
 
-	// Stop server
 	if err := server.Stop(ctx); err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
 }
 
-// Test concurrent access
 func TestConcurrentAccess(t *testing.T) {
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
@@ -282,12 +247,10 @@ func TestConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 	transport := NewTestableStdioTransport(nil, nil)
 
-	// Start server
 	if err := server.Start(ctx, transport); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Number of concurrent operations
 	numOps := 10
 	var wg sync.WaitGroup
 	wg.Add(numOps * 2) // tools + resources
@@ -326,10 +289,8 @@ func TestConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for all operations to complete
 	wg.Wait()
 
-	// Verify all tools and resources were added
 	if len(server.tools) != numOps {
 		t.Errorf("Expected %d tools, got %d", numOps, len(server.tools))
 	}
@@ -338,13 +299,11 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Errorf("Expected %d resources, got %d", numOps, len(server.resources))
 	}
 
-	// Stop server
 	if err := server.Stop(ctx); err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
 }
 
-// Test tool handler adaptation
 func TestToolHandlerAdapter(t *testing.T) {
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
@@ -405,7 +364,6 @@ func TestToolHandlerAdapter(t *testing.T) {
 	})
 }
 
-// Test error conditions
 func TestErrorConditions(t *testing.T) {
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
@@ -427,8 +385,8 @@ func TestErrorConditions(t *testing.T) {
 	}
 }
 
-// Test logging - simplified test since we're using real logger
 func TestLogging(t *testing.T) {
+	// TODO: remove useless test
 	impl := Implementation{Name: "test-server", Version: "1.0.0"}
 	cfg := (*config.Config)(nil)
 	log := createTestLogger(t)
@@ -462,10 +420,8 @@ func TestLogging(t *testing.T) {
 	t.Log("Logging test completed - all operations logged successfully")
 }
 
-// Mock types for testing are no longer needed since we use real types
-
-// Interface compliance test
 func TestServerInterfaceCompliance(t *testing.T) {
 	// Ensure our Server type implements MCPServer interface
+	// TODO: remove useless test
 	var _ MCPServer = (*Server)(nil)
 }
