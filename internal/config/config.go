@@ -11,20 +11,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TODO: refactor all functions following Single Responsibility Principle
-
 const (
-	// Default server settings
 	DefaultServerHost     = "localhost"
 	DefaultServerPort     = 3000
 	
-	// Default HTTP server timeouts
 	DefaultReadTimeout    = 15 * time.Second
 	DefaultWriteTimeout   = 15 * time.Second
 	DefaultIdleTimeout    = 60 * time.Second
 	DefaultMaxHeaderBytes = 1 << 20 // 1MB
 	
-	// Default MCP settings
 	DefaultProtocolTimeout = 30 * time.Second
 	DefaultMaxTools        = 100
 	DefaultMaxResources    = 100
@@ -123,7 +118,31 @@ type FileResourceCacheConfig struct {
 	Enabled        bool `yaml:"enabled"`
 }
 
-// getEnvBool gets environment variable as boolean with default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
+}
+
 func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		switch strings.ToLower(value) {
@@ -136,10 +155,9 @@ func getEnvBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-func loadConfigFile() (*FileConfig, error) {
+func loadFromFile() (*FileConfig, error) {
 	configPath := getEnv("MCP_CONFIG_FILE", "")
 	if configPath == "" {
-		// Try default locations
 		candidates := []string{
 			"configs/development.yaml",
 			"configs/production.yaml",
@@ -155,7 +173,7 @@ func loadConfigFile() (*FileConfig, error) {
 	}
 	
 	if configPath == "" {
-		return nil, nil // No config file found, not an error
+		return nil, nil
 	}
 	
 	data, err := os.ReadFile(configPath)
@@ -171,94 +189,8 @@ func loadConfigFile() (*FileConfig, error) {
 	return &fileConfig, nil
 }
 
-func mergeFileConfig(base *Config, file *FileConfig) *Config {
-	if file == nil {
-		return base
-	}
-	
-	result := *base // Copy base config
-	
-	// Merge server config (only if not overridden by env vars)
-	if file.Server.Host != "" && os.Getenv("MCP_SERVER_HOST") == "" {
-		result.Server.Host = file.Server.Host
-	}
-	if file.Server.Port != 0 && os.Getenv("MCP_SERVER_PORT") == "" {
-		result.Server.Port = file.Server.Port
-	}
-	if file.Server.ReadTimeout != "" && os.Getenv("MCP_SERVER_READ_TIMEOUT") == "" {
-		if duration, err := time.ParseDuration(file.Server.ReadTimeout); err == nil {
-			result.Server.ReadTimeout = duration
-		}
-	}
-	if file.Server.WriteTimeout != "" && os.Getenv("MCP_SERVER_WRITE_TIMEOUT") == "" {
-		if duration, err := time.ParseDuration(file.Server.WriteTimeout); err == nil {
-			result.Server.WriteTimeout = duration
-		}
-	}
-	if file.Server.IdleTimeout != "" && os.Getenv("MCP_SERVER_IDLE_TIMEOUT") == "" {
-		if duration, err := time.ParseDuration(file.Server.IdleTimeout); err == nil {
-			result.Server.IdleTimeout = duration
-		}
-	}
-	if file.Server.MaxHeaderBytes != 0 && os.Getenv("MCP_SERVER_MAX_HEADER_BYTES") == "" {
-		result.Server.MaxHeaderBytes = file.Server.MaxHeaderBytes
-	}
-	
-	// Merge logger config (only if not overridden by env vars)
-	if file.Logger.Level != "" && os.Getenv("MCP_LOG_LEVEL") == "" {
-		result.Logger.Level = file.Logger.Level
-	}
-	if file.Logger.Format != "" && os.Getenv("MCP_LOG_FORMAT") == "" {
-		result.Logger.Format = file.Logger.Format
-	}
-	if file.Logger.Service != "" && os.Getenv("MCP_SERVICE_NAME") == "" {
-		result.Logger.Service = file.Logger.Service
-	}
-	if file.Logger.Version != "" && os.Getenv("MCP_VERSION") == "" {
-		result.Logger.Version = file.Logger.Version
-	}
-	if os.Getenv("MCP_LOG_USE_EMOJIS") == "" {
-		result.Logger.UseEmojis = file.Logger.UseEmojis
-	}
-	
-	// Merge MCP config (only if not overridden by env vars)
-	if file.MCP.ProtocolTimeout != "" && os.Getenv("MCP_PROTOCOL_TIMEOUT") == "" {
-		if duration, err := time.ParseDuration(file.MCP.ProtocolTimeout); err == nil {
-			result.MCP.ProtocolTimeout = duration
-		}
-	}
-	if file.MCP.MaxTools != 0 && os.Getenv("MCP_MAX_TOOLS") == "" {
-		result.MCP.MaxTools = file.MCP.MaxTools
-	}
-	if file.MCP.MaxResources != 0 && os.Getenv("MCP_MAX_RESOURCES") == "" {
-		result.MCP.MaxResources = file.MCP.MaxResources
-	}
-	if os.Getenv("MCP_DEBUG_MODE") == "" {
-		result.MCP.DebugMode = file.MCP.DebugMode
-	}
-	if os.Getenv("MCP_ENABLE_METRICS") == "" {
-		result.MCP.EnableMetrics = file.MCP.EnableMetrics
-	}
-	if file.MCP.BufferSize != 0 && os.Getenv("MCP_BUFFER_SIZE") == "" {
-		result.MCP.BufferSize = file.MCP.BufferSize
-	}
-	
-	// Merge resource cache config (only if not overridden by env vars)
-	if file.MCP.ResourceCache.DefaultTimeout != 0 && os.Getenv("MCP_RESOURCE_CACHE_TIMEOUT") == "" {
-		result.MCP.ResourceCache.DefaultTimeout = file.MCP.ResourceCache.DefaultTimeout
-	}
-	if file.MCP.ResourceCache.MaxSize != 0 && os.Getenv("MCP_RESOURCE_CACHE_MAX_SIZE") == "" {
-		result.MCP.ResourceCache.MaxSize = file.MCP.ResourceCache.MaxSize
-	}
-	if os.Getenv("MCP_RESOURCE_CACHE_ENABLED") == "" {
-		result.MCP.ResourceCache.Enabled = file.MCP.ResourceCache.Enabled
-	}
-	
-	return &result
-}
-
-func Load() (*Config, error) {
-	cfg := &Config{
+func loadFromEnvironment() *Config {
+	return &Config{
 		Server: ServerConfig{
 			Host:           getEnv("MCP_SERVER_HOST", DefaultServerHost),
 			Port:           getEnvInt("MCP_SERVER_PORT", DefaultServerPort),
@@ -288,17 +220,237 @@ func Load() (*Config, error) {
 			},
 		},
 	}
+}
+
+func mergeServerConfig(base *ServerConfig, file *FileServerConfig) {
+	if file.Host != "" && os.Getenv("MCP_SERVER_HOST") == "" {
+		base.Host = file.Host
+	}
+	if file.Port != 0 && os.Getenv("MCP_SERVER_PORT") == "" {
+		base.Port = file.Port
+	}
+	if file.ReadTimeout != "" && os.Getenv("MCP_SERVER_READ_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.ReadTimeout); err == nil {
+			base.ReadTimeout = duration
+		}
+	}
+	if file.WriteTimeout != "" && os.Getenv("MCP_SERVER_WRITE_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.WriteTimeout); err == nil {
+			base.WriteTimeout = duration
+		}
+	}
+	if file.IdleTimeout != "" && os.Getenv("MCP_SERVER_IDLE_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.IdleTimeout); err == nil {
+			base.IdleTimeout = duration
+		}
+	}
+	if file.MaxHeaderBytes != 0 && os.Getenv("MCP_SERVER_MAX_HEADER_BYTES") == "" {
+		base.MaxHeaderBytes = file.MaxHeaderBytes
+	}
+}
+
+func mergeLoggerConfig(base *LoggerConfig, file *FileLoggerConfig) {
+	if file.Level != "" && os.Getenv("MCP_LOG_LEVEL") == "" {
+		base.Level = file.Level
+	}
+	if file.Format != "" && os.Getenv("MCP_LOG_FORMAT") == "" {
+		base.Format = file.Format
+	}
+	if file.Service != "" && os.Getenv("MCP_SERVICE_NAME") == "" {
+		base.Service = file.Service
+	}
+	if file.Version != "" && os.Getenv("MCP_VERSION") == "" {
+		base.Version = file.Version
+	}
+	if os.Getenv("MCP_LOG_USE_EMOJIS") == "" {
+		base.UseEmojis = file.UseEmojis
+	}
+}
+
+func mergeMCPConfig(base *MCPConfig, file *FileMCPConfig) {
+	if file.ProtocolTimeout != "" && os.Getenv("MCP_PROTOCOL_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.ProtocolTimeout); err == nil {
+			base.ProtocolTimeout = duration
+		}
+	}
+	if file.MaxTools != 0 && os.Getenv("MCP_MAX_TOOLS") == "" {
+		base.MaxTools = file.MaxTools
+	}
+	if file.MaxResources != 0 && os.Getenv("MCP_MAX_RESOURCES") == "" {
+		base.MaxResources = file.MaxResources
+	}
+	if os.Getenv("MCP_DEBUG_MODE") == "" {
+		base.DebugMode = file.DebugMode
+	}
+	if os.Getenv("MCP_ENABLE_METRICS") == "" {
+		base.EnableMetrics = file.EnableMetrics
+	}
+	if file.BufferSize != 0 && os.Getenv("MCP_BUFFER_SIZE") == "" {
+		base.BufferSize = file.BufferSize
+	}
+}
+
+func mergeResourceCacheConfig(base *ResourceCacheConfig, file *FileResourceCacheConfig) {
+	if file.DefaultTimeout != 0 && os.Getenv("MCP_RESOURCE_CACHE_TIMEOUT") == "" {
+		base.DefaultTimeout = file.DefaultTimeout
+	}
+	if file.MaxSize != 0 && os.Getenv("MCP_RESOURCE_CACHE_MAX_SIZE") == "" {
+		base.MaxSize = file.MaxSize
+	}
+	if os.Getenv("MCP_RESOURCE_CACHE_ENABLED") == "" {
+		base.Enabled = file.Enabled
+	}
+}
+
+func mergeConfigs(base *Config, file *FileConfig) *Config {
+	if file == nil {
+		return base
+	}
 	
-	fileConfig, err := loadConfigFile()
+	result := *base
+	
+	mergeServerConfig(&result.Server, &file.Server)
+	mergeLoggerConfig(&result.Logger, &file.Logger)
+	mergeMCPConfig(&result.MCP, &file.MCP)
+	mergeResourceCacheConfig(&result.MCP.ResourceCache, &file.MCP.ResourceCache)
+	
+	return &result
+}
+
+func validateServerConfig(cfg *ServerConfig) ValidationErrors {
+	var errors ValidationErrors
+	
+	if cfg.Host == "" {
+		errors = append(errors, "server host cannot be empty (hint: use 'localhost' for local development)")
+	}
+	
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		errors = append(errors, fmt.Sprintf("server port must be between 1 and 65535, got %d (hint: use 3000 for development, 8080 for production)", cfg.Port))
+	}
+	
+	if cfg.ReadTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("server read timeout cannot be negative, got %v (hint: use 15s or larger)", cfg.ReadTimeout))
+	} else if cfg.ReadTimeout > 5*time.Minute {
+		errors = append(errors, fmt.Sprintf("server read timeout is very large: %v (hint: typically 15s-60s)", cfg.ReadTimeout))
+	}
+	
+	if cfg.WriteTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("server write timeout cannot be negative, got %v (hint: use 15s or larger)", cfg.WriteTimeout))
+	} else if cfg.WriteTimeout > 5*time.Minute {
+		errors = append(errors, fmt.Sprintf("server write timeout is very large: %v (hint: typically 15s-60s)", cfg.WriteTimeout))
+	}
+	
+	if cfg.IdleTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("server idle timeout cannot be negative, got %v (hint: use 60s or larger)", cfg.IdleTimeout))
+	}
+	
+	if cfg.ReadTimeout > 0 && cfg.IdleTimeout > 0 && cfg.ReadTimeout >= cfg.IdleTimeout {
+		errors = append(errors, fmt.Sprintf("read timeout (%v) should be less than idle timeout (%v)", cfg.ReadTimeout, cfg.IdleTimeout))
+	}
+	
+	if cfg.WriteTimeout > 0 && cfg.IdleTimeout > 0 && cfg.WriteTimeout >= cfg.IdleTimeout {
+		errors = append(errors, fmt.Sprintf("write timeout (%v) should be less than idle timeout (%v)", cfg.WriteTimeout, cfg.IdleTimeout))
+	}
+	
+	if cfg.MaxHeaderBytes < 1 {
+		errors = append(errors, fmt.Sprintf("server max header bytes must be positive, got %d (hint: use 1048576 for 1MB)", cfg.MaxHeaderBytes))
+	} else if cfg.MaxHeaderBytes > 10*1024*1024 {
+		errors = append(errors, fmt.Sprintf("server max header bytes is very large: %d (hint: typically 1MB-8MB)", cfg.MaxHeaderBytes))
+	}
+	
+	return errors
+}
+
+func validateLoggerConfig(cfg *LoggerConfig) ValidationErrors {
+	var errors ValidationErrors
+	
+	normalizedLevel := strings.ToLower(cfg.Level)
+	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLevels[normalizedLevel] {
+		errors = append(errors, fmt.Sprintf("invalid log level: %s (valid options: debug, info, warn, error)", cfg.Level))
+	}
+	
+	validFormats := map[string]bool{"json": true, "text": true, "console": true}
+	if !validFormats[cfg.Format] {
+		errors = append(errors, fmt.Sprintf("invalid log format: %s (valid options: json, text, console)", cfg.Format))
+	}
+	
+	return errors
+}
+
+func validateMCPConfig(cfg *MCPConfig) ValidationErrors {
+	var errors ValidationErrors
+	
+	if cfg.ProtocolTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("MCP protocol timeout cannot be negative, got %v (hint: use 30s or larger)", cfg.ProtocolTimeout))
+	} else if cfg.ProtocolTimeout > 10*time.Minute {
+		errors = append(errors, fmt.Sprintf("MCP protocol timeout is very large: %v (hint: typically 30s-5m)", cfg.ProtocolTimeout))
+	}
+	
+	if cfg.MaxTools < 1 {
+		errors = append(errors, fmt.Sprintf("MCP max tools must be positive, got %d (hint: use 10-1000)", cfg.MaxTools))
+	} else if cfg.MaxTools > 10000 {
+		errors = append(errors, fmt.Sprintf("MCP max tools is very large: %d (hint: typically 10-1000)", cfg.MaxTools))
+	}
+	
+	if cfg.MaxResources < 1 {
+		errors = append(errors, fmt.Sprintf("MCP max resources must be positive, got %d (hint: use 10-1000)", cfg.MaxResources))
+	} else if cfg.MaxResources > 10000 {
+		errors = append(errors, fmt.Sprintf("MCP max resources is very large: %d (hint: typically 10-1000)", cfg.MaxResources))
+	}
+	
+	if cfg.BufferSize < 1024 {
+		errors = append(errors, fmt.Sprintf("MCP buffer size too small: %d (hint: use 4096 or larger)", cfg.BufferSize))
+	} else if cfg.BufferSize > 1024*1024 {
+		errors = append(errors, fmt.Sprintf("MCP buffer size very large: %d (hint: typically 4KB-64KB)", cfg.BufferSize))
+	}
+	
+	return errors
+}
+
+func validateResourceCacheConfig(cfg *ResourceCacheConfig) ValidationErrors {
+	var errors ValidationErrors
+	
+	if cfg.DefaultTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("resource cache default timeout cannot be negative: %d", cfg.DefaultTimeout))
+	} else if cfg.DefaultTimeout > 86400 {
+		errors = append(errors, fmt.Sprintf("resource cache default timeout too large: %d seconds (hint: typically 300-3600 seconds)", cfg.DefaultTimeout))
+	}
+	
+	if cfg.MaxSize < 0 {
+		errors = append(errors, fmt.Sprintf("resource cache max size cannot be negative: %d", cfg.MaxSize))
+	} else if cfg.MaxSize > 100000 {
+		errors = append(errors, fmt.Sprintf("resource cache max size very large: %d (hint: typically 100-10000)", cfg.MaxSize))
+	}
+	
+	return errors
+}
+
+func validateConfig(cfg *Config) error {
+	var allErrors ValidationErrors
+	
+	allErrors = append(allErrors, validateServerConfig(&cfg.Server)...)
+	allErrors = append(allErrors, validateLoggerConfig(&cfg.Logger)...)
+	allErrors = append(allErrors, validateMCPConfig(&cfg.MCP)...)
+	allErrors = append(allErrors, validateResourceCacheConfig(&cfg.MCP.ResourceCache)...)
+	
+	if len(allErrors) > 0 {
+		return allErrors
+	}
+	return nil
+}
+
+func Load() (*Config, error) {
+	cfg := loadFromEnvironment()
+	
+	fileConfig, err := loadFromFile()
 	if err != nil {
-		// Log warning but don't fail - env vars might be sufficient
-		// Note: We can't use logger here as it's not initialized yet
 		fmt.Fprintf(os.Stderr, "Warning: failed to load config file: %v\n", err)
 	}
 	
-	cfg = mergeFileConfig(cfg, fileConfig)
+	cfg = mergeConfigs(cfg, fileConfig)
 	
-	if err := cfg.Validate(); err != nil {
+	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 	
@@ -306,103 +458,7 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	var errors ValidationErrors
-	
-	if c.Server.Host == "" {
-		errors = append(errors, "server host cannot be empty (hint: use 'localhost' for local development)")
-	}
-	
-	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		errors = append(errors, fmt.Sprintf("server port must be between 1 and 65535, got %d (hint: use 3000 for development, 8080 for production)", c.Server.Port))
-	} else if c.Server.Port < 1024 {
-		// Note: This is a warning, not an error - privileged ports require root access
-		// We don't add this to errors as it's not fatal, just noteworthy
-	}
-	
-	if c.Server.ReadTimeout < 0 {
-		errors = append(errors, fmt.Sprintf("server read timeout cannot be negative, got %v (hint: use 15s or larger)", c.Server.ReadTimeout))
-	} else if c.Server.ReadTimeout > 5*time.Minute {
-		errors = append(errors, fmt.Sprintf("server read timeout is very large: %v (hint: typically 15s-60s)", c.Server.ReadTimeout))
-	}
-	
-	if c.Server.WriteTimeout < 0 {
-		errors = append(errors, fmt.Sprintf("server write timeout cannot be negative, got %v (hint: use 15s or larger)", c.Server.WriteTimeout))
-	} else if c.Server.WriteTimeout > 5*time.Minute {
-		errors = append(errors, fmt.Sprintf("server write timeout is very large: %v (hint: typically 15s-60s)", c.Server.WriteTimeout))
-	}
-	
-	if c.Server.IdleTimeout < 0 {
-		errors = append(errors, fmt.Sprintf("server idle timeout cannot be negative, got %v (hint: use 60s or larger)", c.Server.IdleTimeout))
-	}
-	
-	// Cross-parameter validation
-	if c.Server.ReadTimeout > 0 && c.Server.IdleTimeout > 0 && c.Server.ReadTimeout >= c.Server.IdleTimeout {
-		errors = append(errors, fmt.Sprintf("read timeout (%v) should be less than idle timeout (%v)", c.Server.ReadTimeout, c.Server.IdleTimeout))
-	}
-	
-	if c.Server.WriteTimeout > 0 && c.Server.IdleTimeout > 0 && c.Server.WriteTimeout >= c.Server.IdleTimeout {
-		errors = append(errors, fmt.Sprintf("write timeout (%v) should be less than idle timeout (%v)", c.Server.WriteTimeout, c.Server.IdleTimeout))
-	}
-	
-	if c.Server.MaxHeaderBytes < 1 {
-		errors = append(errors, fmt.Sprintf("server max header bytes must be positive, got %d (hint: use 1048576 for 1MB)", c.Server.MaxHeaderBytes))
-	} else if c.Server.MaxHeaderBytes > 10*1024*1024 {
-		errors = append(errors, fmt.Sprintf("server max header bytes is very large: %d (hint: typically 1MB-8MB)", c.Server.MaxHeaderBytes))
-	}
-	
-	normalizedLevel := strings.ToLower(c.Logger.Level)
-	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
-	if !validLevels[normalizedLevel] {
-		errors = append(errors, fmt.Sprintf("invalid log level: %s (valid options: debug, info, warn, error)", c.Logger.Level))
-	}
-	
-	validFormats := map[string]bool{"json": true, "text": true, "console": true}
-	if !validFormats[c.Logger.Format] {
-		errors = append(errors, fmt.Sprintf("invalid log format: %s (valid options: json, text, console)", c.Logger.Format))
-	}
-	
-	// MCP configuration validation
-	if c.MCP.ProtocolTimeout < 0 {
-		errors = append(errors, fmt.Sprintf("MCP protocol timeout cannot be negative, got %v (hint: use 30s or larger)", c.MCP.ProtocolTimeout))
-	} else if c.MCP.ProtocolTimeout > 10*time.Minute {
-		errors = append(errors, fmt.Sprintf("MCP protocol timeout is very large: %v (hint: typically 30s-5m)", c.MCP.ProtocolTimeout))
-	}
-	
-	if c.MCP.MaxTools < 1 {
-		errors = append(errors, fmt.Sprintf("MCP max tools must be positive, got %d (hint: use 10-1000)", c.MCP.MaxTools))
-	} else if c.MCP.MaxTools > 10000 {
-		errors = append(errors, fmt.Sprintf("MCP max tools is very large: %d (hint: typically 10-1000)", c.MCP.MaxTools))
-	}
-	
-	if c.MCP.MaxResources < 1 {
-		errors = append(errors, fmt.Sprintf("MCP max resources must be positive, got %d (hint: use 10-1000)", c.MCP.MaxResources))
-	} else if c.MCP.MaxResources > 10000 {
-		errors = append(errors, fmt.Sprintf("MCP max resources is very large: %d (hint: typically 10-1000)", c.MCP.MaxResources))
-	}
-	
-	if c.MCP.BufferSize < 1024 {
-		errors = append(errors, fmt.Sprintf("MCP buffer size too small: %d (hint: use 4096 or larger)", c.MCP.BufferSize))
-	} else if c.MCP.BufferSize > 1024*1024 {
-		errors = append(errors, fmt.Sprintf("MCP buffer size very large: %d (hint: typically 4KB-64KB)", c.MCP.BufferSize))
-	}
-	
-	// Resource cache validation
-	if c.MCP.ResourceCache.DefaultTimeout < 0 {
-		errors = append(errors, fmt.Sprintf("resource cache default timeout cannot be negative: %d", c.MCP.ResourceCache.DefaultTimeout))
-	} else if c.MCP.ResourceCache.DefaultTimeout > 86400 {
-		errors = append(errors, fmt.Sprintf("resource cache default timeout too large: %d seconds (hint: typically 300-3600 seconds)", c.MCP.ResourceCache.DefaultTimeout))
-	}
-	
-	if c.MCP.ResourceCache.MaxSize < 0 {
-		errors = append(errors, fmt.Sprintf("resource cache max size cannot be negative: %d", c.MCP.ResourceCache.MaxSize))
-	} else if c.MCP.ResourceCache.MaxSize > 100000 {
-		errors = append(errors, fmt.Sprintf("resource cache max size very large: %d (hint: typically 100-10000)", c.MCP.ResourceCache.MaxSize))
-	}
-	
-	if len(errors) > 0 {
-		return errors
-	}
-	return nil
+	return validateConfig(c)
 }
 
 func (c *Config) String() string {
@@ -432,29 +488,4 @@ func (c *Config) ValidationReport() string {
 	} else {
 		return fmt.Sprintf("Configuration validation: FAILED\n%v", err)
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
-
-func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
 }
