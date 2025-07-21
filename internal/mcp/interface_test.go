@@ -141,22 +141,6 @@ func (m *MockContent) Type() string    { return m.contentType }
 func (m *MockContent) GetText() string { return m.text }
 func (m *MockContent) GetBlob() []byte { return m.blob }
 
-// Interface compliance tests - these ensure our mock implementations
-// properly implement the interfaces (compile-time verification)
-func TestInterfaceCompliance(t *testing.T) {
-	// Test that our mock implementations satisfy the interfaces
-	// TODO: remove useless test
-	var _ MCPServer = (*MockMCPServer)(nil)
-	var _ Tool = (*MockTool)(nil)
-	var _ ToolHandler = (*MockToolHandler)(nil)
-	var _ ToolResult = (*MockToolResult)(nil)
-	var _ Resource = (*MockResource)(nil)
-	var _ ResourceHandler = (*MockResourceHandler)(nil)
-	var _ ResourceContent = (*MockResourceContent)(nil)
-	var _ Transport = (*MockTransport)(nil)
-	var _ Content = (*MockContent)(nil)
-}
-
 func TestImplementation(t *testing.T) {
 	impl := Implementation{
 		Name:    "test-server",

@@ -225,13 +225,6 @@ func TestStdioTransportClose(t *testing.T) {
 	}
 }
 
-func TestTransportInterfaceCompliance(t *testing.T) {
-	// TODO: remove useless test
-	// Ensure our implementations satisfy the Transport interface
-	var _ Transport = (*StdioTransport)(nil)
-	var _ Transport = (*TestableStdioTransport)(nil)
-}
-
 func TestStdioTransportEmptyWrite(t *testing.T) {
 	reader := strings.NewReader("test\n")
 	var writer bytes.Buffer

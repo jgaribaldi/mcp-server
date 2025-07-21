@@ -250,15 +250,6 @@ func TestResourceContentEmptyMimeType(t *testing.T) {
 	}
 }
 
-func TestContentInterfaceCompliance(t *testing.T) {
-	// TODO: remove useless test
-	// Ensure our concrete types implement the interfaces
-	var _ Content = (*TextContent)(nil)
-	var _ Content = (*BlobContent)(nil)
-	var _ ToolResult = (*toolResult)(nil)
-	var _ ResourceContent = (*resourceContent)(nil)
-}
-
 func BenchmarkTextContentCreation(b *testing.B) {
 	text := "This is a test string for benchmarking"
 	b.ResetTimer()

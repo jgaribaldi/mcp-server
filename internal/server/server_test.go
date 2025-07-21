@@ -15,6 +15,8 @@ import (
 	"mcp-server/internal/tools"
 )
 
+// TODO: refactor this file following the Single Responsibility Principle
+
 type MockToolRegistry struct {
 	health   tools.RegistryHealth
 	toolList []tools.ToolInfo

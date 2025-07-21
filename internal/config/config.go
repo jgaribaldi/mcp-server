@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// TODO: refactor all functions following Single Responsibility Principle
+
 const (
 	// Default server settings
 	DefaultServerHost     = "localhost"

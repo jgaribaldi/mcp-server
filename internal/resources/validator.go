@@ -12,6 +12,8 @@ import (
 	"mcp-server/internal/mcp"
 )
 
+// TODO: refactor this file following Single Responsiblity Principle
+
 type ResourceValidator struct {
 	config *config.Config
 	logger *logger.Logger

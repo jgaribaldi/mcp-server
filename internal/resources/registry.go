@@ -11,6 +11,8 @@ import (
 	"mcp-server/internal/mcp"
 )
 
+// TODO: refactor this file following Single Responsiblity Principle
+
 type DefaultResourceRegistry struct {
 	factories        map[string]ResourceFactory
 	circuitFactories map[string]*CircuitBreakerResourceFactory
