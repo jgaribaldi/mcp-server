@@ -12,8 +12,6 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// TODO: refactor this file following Single Responsiblity Principle
-
 type ResourceValidator struct {
 	config *config.Config
 	logger *logger.Logger
@@ -26,9 +24,26 @@ func NewResourceValidator(cfg *config.Config, log *logger.Logger) *ResourceValid
 	}
 }
 
-func (v *ResourceValidator) ValidateURI(uri string) error {
-	v.logger.Debug("validating resource URI", "uri", uri)
+func (v *ResourceValidator) validateStringLength(value string, fieldName string, maxLength int) error {
+	if len(value) > maxLength {
+		return fmt.Errorf("%s too long: %d characters (max: %d)", fieldName, len(value), maxLength)
+	}
+	return nil
+}
 
+func (v *ResourceValidator) addValidationError(errors *ResourceValidationErrors, field, value, message string) {
+	errors.Add(field, value, message)
+}
+
+func (v *ResourceValidator) logValidationResult(success bool, entityType, uri string, errorCount int) {
+	if success {
+		v.logger.Debug(fmt.Sprintf("%s validation passed", entityType), "uri", uri)
+	} else {
+		v.logger.Error(fmt.Sprintf("%s validation failed", entityType), "uri", uri, "errors", errorCount)
+	}
+}
+
+func (v *ResourceValidator) validateBasicURI(uri string) error {
 	if uri == "" {
 		return fmt.Errorf("URI cannot be empty")
 	}
@@ -42,6 +57,10 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 		return fmt.Errorf("URI must have a scheme (e.g., file://, config://, api://)")
 	}
 
+	return nil
+}
+
+func (v *ResourceValidator) validateURIScheme(uri string, parsedURI *url.URL) error {
 	supportedSchemes := map[string]bool{
 		"file":   true,
 		"config": true,
@@ -53,10 +72,6 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 
 	if !supportedSchemes[parsedURI.Scheme] {
 		return fmt.Errorf("unsupported URI scheme: %s (supported: file, config, api, custom, http, https)", parsedURI.Scheme)
-	}
-
-	if len(uri) > 2048 {
-		return fmt.Errorf("URI too long: %d characters (max: 2048)", len(uri))
 	}
 
 	switch parsedURI.Scheme {
@@ -77,6 +92,33 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 		}
 	}
 
+	return nil
+}
+
+func (v *ResourceValidator) validateURILength(uri string) error {
+	if len(uri) > 2048 {
+		return fmt.Errorf("URI too long: %d characters (max: 2048)", len(uri))
+	}
+	return nil
+}
+
+func (v *ResourceValidator) ValidateURI(uri string) error {
+	v.logger.Debug("validating resource URI", "uri", uri)
+
+	if err := v.validateBasicURI(uri); err != nil {
+		return err
+	}
+
+	parsedURI, _ := url.Parse(uri)
+
+	if err := v.validateURIScheme(uri, parsedURI); err != nil {
+		return err
+	}
+
+	if err := v.validateURILength(uri); err != nil {
+		return err
+	}
+
 	v.logger.Debug("resource URI validation passed", "uri", uri, "scheme", parsedURI.Scheme)
 	return nil
 }
@@ -86,8 +128,8 @@ func (v *ResourceValidator) ValidateName(name string) error {
 		return fmt.Errorf("name cannot be empty")
 	}
 
-	if len(name) > 255 {
-		return fmt.Errorf("name too long: %d characters (max: 255)", len(name))
+	if err := v.validateStringLength(name, "name", 255); err != nil {
+		return err
 	}
 
 	validName := regexp.MustCompile(`^[a-zA-Z0-9\-_ ]+$`)
@@ -129,70 +171,104 @@ func (v *ResourceValidator) ValidateMimeType(mimeType string) error {
 	return nil
 }
 
+func (v *ResourceValidator) validateFactoryBasics(factory ResourceFactory, errors *ResourceValidationErrors) {
+	if err := v.ValidateURI(factory.URI()); err != nil {
+		v.addValidationError(errors, "uri", factory.URI(), err.Error())
+	}
+
+	if err := v.ValidateName(factory.Name()); err != nil {
+		v.addValidationError(errors, "name", factory.Name(), err.Error())
+	}
+
+	if factory.Description() == "" {
+		v.addValidationError(errors, "description", "", "description cannot be empty")
+	} else if err := v.validateStringLength(factory.Description(), "description", 1000); err != nil {
+		v.addValidationError(errors, "description", factory.Description(), err.Error())
+	}
+}
+
+func (v *ResourceValidator) validateFactoryMetadata(factory ResourceFactory, errors *ResourceValidationErrors) {
+	if err := v.ValidateMimeType(factory.MimeType()); err != nil {
+		v.addValidationError(errors, "mime_type", factory.MimeType(), err.Error())
+	}
+
+	if factory.Version() == "" {
+		v.addValidationError(errors, "version", "", "version cannot be empty")
+	} else if err := v.validateStringLength(factory.Version(), "version", 50); err != nil {
+		v.addValidationError(errors, "version", factory.Version(), err.Error())
+	}
+}
+
+func (v *ResourceValidator) validateFactoryCapabilities(factory ResourceFactory, errors *ResourceValidationErrors) {
+	capabilities := factory.Capabilities()
+	if len(capabilities) == 0 {
+		v.addValidationError(errors, "capabilities", "", "at least one capability must be specified")
+		return
+	}
+
+	for i, capability := range capabilities {
+		if capability == "" {
+			v.addValidationError(errors, "capabilities", fmt.Sprintf("[%d]", i), "capability cannot be empty")
+		} else if err := v.validateStringLength(capability, "capability", 100); err != nil {
+			v.addValidationError(errors, "capabilities", capability, err.Error())
+		}
+	}
+}
+
+func (v *ResourceValidator) validateFactoryTags(factory ResourceFactory, errors *ResourceValidationErrors) {
+	tags := factory.Tags()
+	for i, tag := range tags {
+		if tag == "" {
+			v.addValidationError(errors, "tags", fmt.Sprintf("[%d]", i), "tag cannot be empty")
+		} else if err := v.validateStringLength(tag, "tag", 50); err != nil {
+			v.addValidationError(errors, "tags", tag, err.Error())
+		}
+	}
+}
+
 func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 	v.logger.Debug("validating resource factory", "uri", factory.URI())
 
 	var errors ResourceValidationErrors
 
-	if err := v.ValidateURI(factory.URI()); err != nil {
-		errors.Add("uri", factory.URI(), err.Error())
-	}
-
-	if err := v.ValidateName(factory.Name()); err != nil {
-		errors.Add("name", factory.Name(), err.Error())
-	}
-
-	if factory.Description() == "" {
-		errors.Add("description", "", "description cannot be empty")
-	} else if len(factory.Description()) > 1000 {
-		errors.Add("description", factory.Description(), 
-			fmt.Sprintf("description too long: %d characters (max: 1000)", len(factory.Description())))
-	}
-
-	if err := v.ValidateMimeType(factory.MimeType()); err != nil {
-		errors.Add("mime_type", factory.MimeType(), err.Error())
-	}
-
-	if factory.Version() == "" {
-		errors.Add("version", "", "version cannot be empty")
-	} else if len(factory.Version()) > 50 {
-		errors.Add("version", factory.Version(), 
-			fmt.Sprintf("version too long: %d characters (max: 50)", len(factory.Version())))
-	}
-
-	capabilities := factory.Capabilities()
-	if len(capabilities) == 0 {
-		errors.Add("capabilities", "", "at least one capability must be specified")
-	} else {
-		for i, capability := range capabilities {
-			if capability == "" {
-				errors.Add("capabilities", fmt.Sprintf("[%d]", i), "capability cannot be empty")
-			} else if len(capability) > 100 {
-				errors.Add("capabilities", capability, 
-					fmt.Sprintf("capability too long: %d characters (max: 100)", len(capability)))
-			}
-		}
-	}
-
-	tags := factory.Tags()
-	for i, tag := range tags {
-		if tag == "" {
-			errors.Add("tags", fmt.Sprintf("[%d]", i), "tag cannot be empty")
-		} else if len(tag) > 50 {
-			errors.Add("tags", tag, 
-				fmt.Sprintf("tag too long: %d characters (max: 50)", len(tag)))
-		}
-	}
+	v.validateFactoryBasics(factory, &errors)
+	v.validateFactoryMetadata(factory, &errors)
+	v.validateFactoryCapabilities(factory, &errors)
+	v.validateFactoryTags(factory, &errors)
 
 	if errors.HasErrors() {
-		v.logger.Error("resource factory validation failed", 
-			"uri", factory.URI(), 
-			"errors", len(errors))
+		v.logValidationResult(false, "resource factory", factory.URI(), len(errors))
 		return errors
 	}
 
-	v.logger.Debug("resource factory validation passed", "uri", factory.URI())
+	v.logValidationResult(true, "resource factory", factory.URI(), 0)
 	return nil
+}
+
+func (v *ResourceValidator) validateResourceBasics(resource mcp.Resource, errors *ResourceValidationErrors) {
+	if err := v.ValidateURI(resource.URI()); err != nil {
+		v.addValidationError(errors, "uri", resource.URI(), err.Error())
+	}
+
+	if err := v.ValidateName(resource.Name()); err != nil {
+		v.addValidationError(errors, "name", resource.Name(), err.Error())
+	}
+
+	if resource.Description() == "" {
+		v.addValidationError(errors, "description", "", "description cannot be empty")
+	}
+}
+
+func (v *ResourceValidator) validateResourceMetadata(resource mcp.Resource, errors *ResourceValidationErrors) {
+	if err := v.ValidateMimeType(resource.MimeType()); err != nil {
+		v.addValidationError(errors, "mime_type", resource.MimeType(), err.Error())
+	}
+}
+
+func (v *ResourceValidator) validateResourceHandler(resource mcp.Resource, errors *ResourceValidationErrors) {
+	if resource.Handler() == nil {
+		v.addValidationError(errors, "handler", "", "resource handler cannot be nil")
+	}
 }
 
 func (v *ResourceValidator) ValidateResource(resource mcp.Resource) error {
@@ -200,35 +276,49 @@ func (v *ResourceValidator) ValidateResource(resource mcp.Resource) error {
 
 	var errors ResourceValidationErrors
 
-	if err := v.ValidateURI(resource.URI()); err != nil {
-		errors.Add("uri", resource.URI(), err.Error())
-	}
-
-	if err := v.ValidateName(resource.Name()); err != nil {
-		errors.Add("name", resource.Name(), err.Error())
-	}
-
-	if resource.Description() == "" {
-		errors.Add("description", "", "description cannot be empty")
-	}
-
-	if err := v.ValidateMimeType(resource.MimeType()); err != nil {
-		errors.Add("mime_type", resource.MimeType(), err.Error())
-	}
-
-	if resource.Handler() == nil {
-		errors.Add("handler", "", "resource handler cannot be nil")
-	}
+	v.validateResourceBasics(resource, &errors)
+	v.validateResourceMetadata(resource, &errors)
+	v.validateResourceHandler(resource, &errors)
 
 	if errors.HasErrors() {
-		v.logger.Error("resource validation failed", 
-			"uri", resource.URI(), 
-			"errors", len(errors))
+		v.logValidationResult(false, "resource", resource.URI(), len(errors))
 		return errors
 	}
 
-	v.logger.Debug("resource validation passed", "uri", resource.URI())
+	v.logValidationResult(true, "resource", resource.URI(), 0)
 	return nil
+}
+
+func (v *ResourceValidator) validateCacheTimeout(config ResourceConfig, errors *ResourceValidationErrors) {
+	if config.CacheTimeout < 0 {
+		v.addValidationError(errors, "cache_timeout", fmt.Sprintf("%d", config.CacheTimeout), 
+			"cache timeout cannot be negative")
+	} else if config.CacheTimeout > 86400 {
+		v.addValidationError(errors, "cache_timeout", fmt.Sprintf("%d", config.CacheTimeout), 
+			"cache timeout too large: maximum 86400 seconds (24 hours)")
+	}
+}
+
+func (v *ResourceValidator) validateAccessControl(config ResourceConfig, errors *ResourceValidationErrors) {
+	for key, value := range config.AccessControl {
+		if key == "" {
+			v.addValidationError(errors, "access_control", "", "access control key cannot be empty")
+		}
+		if value == "" {
+			v.addValidationError(errors, "access_control", key, "access control value cannot be empty")
+		}
+	}
+}
+
+func (v *ResourceValidator) validateConfigMap(config ResourceConfig, errors *ResourceValidationErrors) {
+	for key, value := range config.Config {
+		if key == "" {
+			v.addValidationError(errors, "config", "", "configuration key cannot be empty")
+		}
+		if value == nil {
+			v.addValidationError(errors, "config", key, "configuration value cannot be nil")
+		}
+	}
 }
 
 func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
@@ -236,31 +326,9 @@ func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
 
 	var errors ResourceValidationErrors
 
-	if config.CacheTimeout < 0 {
-		errors.Add("cache_timeout", fmt.Sprintf("%d", config.CacheTimeout), 
-			"cache timeout cannot be negative")
-	} else if config.CacheTimeout > 86400 { // 24 hours
-		errors.Add("cache_timeout", fmt.Sprintf("%d", config.CacheTimeout), 
-			"cache timeout too large: maximum 86400 seconds (24 hours)")
-	}
-
-	for key, value := range config.AccessControl {
-		if key == "" {
-			errors.Add("access_control", "", "access control key cannot be empty")
-		}
-		if value == "" {
-			errors.Add("access_control", key, "access control value cannot be empty")
-		}
-	}
-
-	for key, value := range config.Config {
-		if key == "" {
-			errors.Add("config", "", "configuration key cannot be empty")
-		}
-		if value == nil {
-			errors.Add("config", key, "configuration value cannot be nil")
-		}
-	}
+	v.validateCacheTimeout(config, &errors)
+	v.validateAccessControl(config, &errors)
+	v.validateConfigMap(config, &errors)
 
 	if errors.HasErrors() {
 		v.logger.Error("resource configuration validation failed", "errors", len(errors))
@@ -279,42 +347,73 @@ func (v *ResourceValidator) ValidateCacheExpiration(cached CachedContent) error 
 	return nil
 }
 
-func (v *ResourceValidator) ValidateResourceContent(content mcp.ResourceContent) error {
-	v.logger.Debug("validating resource content")
-
+func (v *ResourceValidator) validateContentMimeType(content mcp.ResourceContent) error {
 	if err := v.ValidateMimeType(content.GetMimeType()); err != nil {
 		return fmt.Errorf("invalid content MIME type: %w", err)
 	}
+	return nil
+}
 
+func (v *ResourceValidator) validateContentStructure(content mcp.ResourceContent) error {
 	contentItems := content.GetContent()
 	if len(contentItems) == 0 {
 		return fmt.Errorf("resource content cannot be empty")
 	}
+	return nil
+}
 
-	for i, item := range contentItems {
-		if item == nil {
-			return fmt.Errorf("content item %d cannot be nil", i)
-		}
-
-		contentType := item.Type()
-		if contentType == "" {
-			return fmt.Errorf("content item %d must have a type", i)
-		}
-
-		switch contentType {
-		case "text":
-			if item.GetText() == "" {
-				return fmt.Errorf("text content item %d cannot be empty", i)
-			}
-		case "blob":
-			if len(item.GetBlob()) == 0 {
-				return fmt.Errorf("blob content item %d cannot be empty", i)
-			}
-		default:
-			return fmt.Errorf("unsupported content type: %s", contentType)
-		}
+func (v *ResourceValidator) validateContentItem(item mcp.Content, index int) error {
+	if item == nil {
+		return fmt.Errorf("content item %d cannot be nil", index)
 	}
 
+	contentType := item.Type()
+	if contentType == "" {
+		return fmt.Errorf("content item %d must have a type", index)
+	}
+
+	switch contentType {
+	case "text":
+		if item.GetText() == "" {
+			return fmt.Errorf("text content item %d cannot be empty", index)
+		}
+	case "blob":
+		if len(item.GetBlob()) == 0 {
+			return fmt.Errorf("blob content item %d cannot be empty", index)
+		}
+	default:
+		return fmt.Errorf("unsupported content type: %s", contentType)
+	}
+
+	return nil
+}
+
+func (v *ResourceValidator) validateContentItems(content mcp.ResourceContent) error {
+	contentItems := content.GetContent()
+	for i, item := range contentItems {
+		if err := v.validateContentItem(item, i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v *ResourceValidator) ValidateResourceContent(content mcp.ResourceContent) error {
+	v.logger.Debug("validating resource content")
+
+	if err := v.validateContentMimeType(content); err != nil {
+		return err
+	}
+
+	if err := v.validateContentStructure(content); err != nil {
+		return err
+	}
+
+	if err := v.validateContentItems(content); err != nil {
+		return err
+	}
+
+	contentItems := content.GetContent()
 	v.logger.Debug("resource content validation passed", "items", len(contentItems))
 	return nil
 }
