@@ -268,79 +268,98 @@ func TestResourceValidator_ValidateMimeType(t *testing.T) {
 func TestResourceValidator_ValidateFactory(t *testing.T) {
 	validator := createTestValidator()
 
-	validFactory := &mockResourceFactory{
-		uri:          "file:///test/resource.txt",
-		name:         "Test Resource",
-		description:  "A test resource",
-		mimeType:     "text/plain",
-		version:      "1.0.0",
-		tags:         []string{"test"},
-		capabilities: []string{"read"},
+	tests := []struct {
+		name        string
+		factory     *mockResourceFactory
+		expectError bool
+		errorSubstr string
+	}{
+		{
+			name: "valid factory",
+			factory: &mockResourceFactory{
+				uri:          "file:///test/resource.txt",
+				name:         "Test Resource",
+				description:  "A test resource",
+				mimeType:     "text/plain",
+				version:      "1.0.0",
+				tags:         []string{"test"},
+				capabilities: []string{"read"},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid URI",
+			factory: &mockResourceFactory{
+				uri:          "invalid-uri",
+				name:         "Test Resource",
+				description:  "A test resource",
+				mimeType:     "text/plain",
+				version:      "1.0.0",
+				tags:         []string{"test"},
+				capabilities: []string{"read"},
+			},
+			expectError: true,
+			errorSubstr: "URI must have a scheme",
+		},
+		{
+			name: "empty name",
+			factory: &mockResourceFactory{
+				uri:          "file:///test/resource.txt",
+				name:         "",
+				description:  "A test resource",
+				mimeType:     "text/plain",
+				version:      "1.0.0",
+				tags:         []string{"test"},
+				capabilities: []string{"read"},
+			},
+			expectError: true,
+			errorSubstr: "name cannot be empty",
+		},
+		{
+			name: "empty description",
+			factory: &mockResourceFactory{
+				uri:          "file:///test/resource.txt",
+				name:         "Test Resource",
+				description:  "",
+				mimeType:     "text/plain",
+				version:      "1.0.0",
+				tags:         []string{"test"},
+				capabilities: []string{"read"},
+			},
+			expectError: true,
+			errorSubstr: "description cannot be empty",
+		},
+		{
+			name: "no capabilities",
+			factory: &mockResourceFactory{
+				uri:          "file:///test/resource.txt",
+				name:         "Test Resource",
+				description:  "A test resource",
+				mimeType:     "text/plain",
+				version:      "1.0.0",
+				tags:         []string{"test"},
+				capabilities: []string{},
+			},
+			expectError: true,
+			errorSubstr: "at least one capability must be specified",
+		},
 	}
 
-	err := validator.ValidateFactory(validFactory)
-	if err != nil {
-		t.Errorf("Expected no error for valid factory, got: %v", err)
-	}
-
-	invalidURIFactory := &mockResourceFactory{
-		uri:          "invalid-uri",
-		name:         "Test Resource",
-		description:  "A test resource",
-		mimeType:     "text/plain",
-		version:      "1.0.0",
-		tags:         []string{"test"},
-		capabilities: []string{"read"},
-	}
-
-	err = validator.ValidateFactory(invalidURIFactory)
-	if err == nil {
-		t.Error("Expected error for factory with invalid URI, got nil")
-	}
-
-	emptyNameFactory := &mockResourceFactory{
-		uri:          "file:///test/resource.txt",
-		name:         "",
-		description:  "A test resource",
-		mimeType:     "text/plain",
-		version:      "1.0.0",
-		tags:         []string{"test"},
-		capabilities: []string{"read"},
-	}
-
-	err = validator.ValidateFactory(emptyNameFactory)
-	if err == nil {
-		t.Error("Expected error for factory with empty name, got nil")
-	}
-
-	emptyDescFactory := &mockResourceFactory{
-		uri:          "file:///test/resource.txt",
-		name:         "Test Resource",
-		description:  "",
-		mimeType:     "text/plain",
-		version:      "1.0.0",
-		tags:         []string{"test"},
-		capabilities: []string{"read"},
-	}
-
-	err = validator.ValidateFactory(emptyDescFactory)
-	if err == nil {
-		t.Error("Expected error for factory with empty description, got nil")
-	}
-
-	noCapabilitiesFactory := &mockResourceFactory{
-		uri:          "file:///test/resource.txt",
-		name:         "Test Resource",
-		description:  "A test resource",
-		mimeType:     "text/plain",
-		version:      "1.0.0",
-		tags:         []string{"test"},
-		capabilities: []string{},
-	}
-
-	err = validator.ValidateFactory(noCapabilitiesFactory)
-	if err == nil {
-		t.Error("Expected error for factory with no capabilities, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateFactory(tt.factory)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for test '%s', got nil", tt.name)
+				} else if !strings.Contains(err.Error(), tt.errorSubstr) {
+					t.Errorf("Expected error containing '%s', got: %v", tt.errorSubstr, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error for test '%s', got: %v", tt.name, err)
+				}
+			}
+		})
 	}
 }
 
@@ -457,7 +476,7 @@ func TestResourceValidator_ValidateCacheExpiration(t *testing.T) {
 	now := time.Now()
 
 	validCache := CachedContent{
-		Content:     nil, // Not relevant for this test
+		Content:     nil,
 		Timestamp:   now,
 		ExpiresAt:   now.Add(5 * time.Minute),
 		AccessCount: 1,
@@ -469,7 +488,7 @@ func TestResourceValidator_ValidateCacheExpiration(t *testing.T) {
 	}
 
 	expiredCache := CachedContent{
-		Content:     nil, // Not relevant for this test
+		Content:     nil,
 		Timestamp:   now.Add(-10 * time.Minute),
 		ExpiresAt:   now.Add(-5 * time.Minute),
 		AccessCount: 1,
@@ -485,8 +504,7 @@ func TestResourceValidator_ValidateCacheExpiration(t *testing.T) {
 	}
 }
 
-func TestResourceValidator_ValidateResourceContent(t *testing.T) {
-	// TODO: refactor this test into multiple smaller tests or use table testing
+func TestResourceValidator_ValidateResourceContent_ValidContent(t *testing.T) {
 	validator := createTestValidator()
 
 	textContent := &mockContent{
@@ -516,35 +534,45 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error for valid blob content, got: %v", err)
 	}
+}
 
+func TestResourceValidator_ValidateResourceContent_InvalidMimeType(t *testing.T) {
+	validator := createTestValidator()
+
+	textContent := &mockContent{
+		contentType: "text",
+		text:        "Test content",
+	}
 	invalidMimeContent := &mockResourceContent{
 		content:  []mcp.Content{textContent},
 		mimeType: "invalid-mime",
 	}
 
-	err = validator.ValidateResourceContent(invalidMimeContent)
+	err := validator.ValidateResourceContent(invalidMimeContent)
 	if err == nil {
 		t.Error("Expected error for content with invalid MIME type, got nil")
 	}
+
+	if !strings.Contains(err.Error(), "invalid MIME type format") {
+		t.Errorf("Expected MIME type format error, got: %v", err)
+	}
+}
+
+func TestResourceValidator_ValidateResourceContent_EmptyContent(t *testing.T) {
+	validator := createTestValidator()
 
 	emptyContent := &mockResourceContent{
 		content:  []mcp.Content{},
 		mimeType: "text/plain",
 	}
 
-	err = validator.ValidateResourceContent(emptyContent)
+	err := validator.ValidateResourceContent(emptyContent)
 	if err == nil {
 		t.Error("Expected error for empty content, got nil")
 	}
 
-	nilItemContent := &mockResourceContent{
-		content:  []mcp.Content{nil},
-		mimeType: "text/plain",
-	}
-
-	err = validator.ValidateResourceContent(nilItemContent)
-	if err == nil {
-		t.Error("Expected error for content with nil item, got nil")
+	if !strings.Contains(err.Error(), "content cannot be empty") {
+		t.Errorf("Expected empty content error, got: %v", err)
 	}
 
 	emptyTextContent := &mockContent{
@@ -574,6 +602,28 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for content with empty blob, got nil")
 	}
+}
+
+func TestResourceValidator_ValidateResourceContent_NilContent(t *testing.T) {
+	validator := createTestValidator()
+
+	nilItemContent := &mockResourceContent{
+		content:  []mcp.Content{nil},
+		mimeType: "text/plain",
+	}
+
+	err := validator.ValidateResourceContent(nilItemContent)
+	if err == nil {
+		t.Error("Expected error for content with nil item, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "content item 0 cannot be nil") {
+		t.Errorf("Expected nil content item error, got: %v", err)
+	}
+}
+
+func TestResourceValidator_ValidateResourceContent_UnsupportedContent(t *testing.T) {
+	validator := createTestValidator()
 
 	unsupportedContent := &mockContent{
 		contentType: "unsupported",
@@ -584,8 +634,12 @@ func TestResourceValidator_ValidateResourceContent(t *testing.T) {
 		mimeType: "text/plain",
 	}
 
-	err = validator.ValidateResourceContent(unsupportedResourceContent)
+	err := validator.ValidateResourceContent(unsupportedResourceContent)
 	if err == nil {
 		t.Error("Expected error for content with unsupported type, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "unsupported content type") {
+		t.Errorf("Expected unsupported content type error, got: %v", err)
 	}
 }
