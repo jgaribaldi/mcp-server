@@ -11,8 +11,6 @@ import (
 	"mcp-server/internal/mcp"
 )
 
-// TODO: refactor this file following Single Responsiblity Principle
-
 type DefaultResourceRegistry struct {
 	factories        map[string]ResourceFactory
 	circuitFactories map[string]*CircuitBreakerResourceFactory
@@ -44,17 +42,7 @@ func NewDefaultResourceRegistry(cfg *config.Config, log *logger.Logger) Resource
 	}
 }
 
-func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.logger.Info("registering resource factory",
-		"uri", uri,
-		"name", factory.Name(),
-		"description", factory.Description(),
-		"version", factory.Version(),
-	)
-
+func (r *DefaultResourceRegistry) validateRegistrationRequest(uri string, factory ResourceFactory) error {
 	if err := r.validator.ValidateURI(uri); err != nil {
 		r.logger.Error("resource URI validation failed",
 			"uri", uri,
@@ -78,10 +66,16 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		return fmt.Errorf("%w: %v", ErrResourceValidation, err)
 	}
 
-	r.factories[uri] = factory
+	return nil
+}
 
+func (r *DefaultResourceRegistry) createCircuitBreakerFactory(factory ResourceFactory) *CircuitBreakerResourceFactory {
 	circuitConfig := DefaultCircuitBreakerConfig()
-	circuitFactory := NewCircuitBreakerResourceFactory(factory, circuitConfig)
+	return NewCircuitBreakerResourceFactory(factory, circuitConfig)
+}
+
+func (r *DefaultResourceRegistry) storeFactoryInfo(uri string, factory ResourceFactory, circuitFactory *CircuitBreakerResourceFactory) {
+	r.factories[uri] = factory
 	r.circuitFactories[uri] = circuitFactory
 
 	info := ResourceInfo{
@@ -96,6 +90,25 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		Metadata:     make(map[string]string),
 	}
 	r.resourceInfo[uri] = info
+}
+
+func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.logger.Info("registering resource factory",
+		"uri", uri,
+		"name", factory.Name(),
+		"description", factory.Description(),
+		"version", factory.Version(),
+	)
+
+	if err := r.validateRegistrationRequest(uri, factory); err != nil {
+		return err
+	}
+
+	circuitFactory := r.createCircuitBreakerFactory(factory)
+	r.storeFactoryInfo(uri, factory, circuitFactory)
 
 	r.logger.Info("resource factory registered successfully",
 		"uri", uri,
@@ -129,10 +142,51 @@ func (r *DefaultResourceRegistry) Unregister(uri string) error {
 	return nil
 }
 
+func (r *DefaultResourceRegistry) findExistingResource(uri string) (mcp.Resource, bool) {
+	if resource, exists := r.resources[uri]; exists {
+		return resource, true
+	}
+	return nil, false
+}
+
+func (r *DefaultResourceRegistry) createResourceInstance(ctx context.Context, factory ResourceFactory) (mcp.Resource, error) {
+	resourceConfig := ResourceConfig{
+		Enabled:       true,
+		Config:        make(map[string]interface{}),
+		CacheTimeout:  300,
+		AccessControl: make(map[string]string),
+	}
+
+	return factory.Create(ctx, resourceConfig)
+}
+
+func (r *DefaultResourceRegistry) validateAndStoreResource(uri string, resource mcp.Resource) error {
+	if err := r.validator.ValidateResource(resource); err != nil {
+		r.logger.Error("created resource validation failed",
+			"uri", uri,
+			"error", err,
+		)
+		return fmt.Errorf("%w: %v", ErrResourceValidation, err)
+	}
+
+	r.mu.Lock()
+	r.resources[uri] = resource
+	
+	if info, exists := r.resourceInfo[uri]; exists {
+		if IsValidTransition(info.Status, ResourceStatusLoaded) {
+			info.Status = ResourceStatusLoaded
+			r.resourceInfo[uri] = info
+		}
+	}
+	r.mu.Unlock()
+
+	return nil
+}
+
 func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 	r.mu.RLock()
 
-	if resource, exists := r.resources[uri]; exists {
+	if resource, exists := r.findExistingResource(uri); exists {
 		r.mu.RUnlock()
 		return resource, nil
 	}
@@ -148,14 +202,7 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	resourceConfig := ResourceConfig{
-		Enabled:       true,
-		Config:        make(map[string]interface{}),
-		CacheTimeout:  300, // 5 minutes default
-		AccessControl: make(map[string]string),
-	}
-
-	resource, err := factory.Create(ctx, resourceConfig)
+	resource, err := r.createResourceInstance(ctx, factory)
 	if err != nil {
 		r.logger.Error("resource creation failed",
 			"uri", uri,
@@ -164,24 +211,9 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 		return nil, fmt.Errorf("%w: %v", ErrResourceCreation, err)
 	}
 
-	if err := r.validator.ValidateResource(resource); err != nil {
-		r.logger.Error("created resource validation failed",
-			"uri", uri,
-			"error", err,
-		)
-		return nil, fmt.Errorf("%w: %v", ErrResourceValidation, err)
+	if err := r.validateAndStoreResource(uri, resource); err != nil {
+		return nil, err
 	}
-
-	r.mu.Lock()
-	r.resources[uri] = resource
-	
-	if info, exists := r.resourceInfo[uri]; exists {
-		if IsValidTransition(info.Status, ResourceStatusLoaded) {
-			info.Status = ResourceStatusLoaded
-			r.resourceInfo[uri] = info
-		}
-	}
-	r.mu.Unlock()
 
 	r.logger.Info("resource instance created and cached",
 		"uri", uri,
@@ -214,6 +246,49 @@ func (r *DefaultResourceRegistry) List() []ResourceInfo {
 	return result
 }
 
+func (r *DefaultResourceRegistry) loadSingleResource(ctx context.Context, uri string, factory ResourceFactory) error {
+	resource, err := r.createResourceInstance(ctx, factory)
+	if err != nil {
+		r.handleResourceLoadError(uri, fmt.Sprintf("failed to create resource %s: %v", uri, err), err)
+		return err
+	}
+
+	if err := r.validator.ValidateResource(resource); err != nil {
+		r.handleResourceLoadError(uri, fmt.Sprintf("resource validation failed for %s: %v", uri, err), err)
+		return err
+	}
+
+	r.validateAndStoreBulkResource(uri, resource)
+	r.logger.Debug("resource loaded successfully", "uri", uri)
+	return nil
+}
+
+func (r *DefaultResourceRegistry) handleResourceLoadError(uri string, errorMsg string, err error) {
+	r.logger.Error("resource creation failed during load",
+		"uri", uri,
+		"error", err,
+	)
+
+	r.mu.Lock()
+	if info, exists := r.resourceInfo[uri]; exists {
+		if IsValidTransition(info.Status, ResourceStatusError) {
+			info.Status = ResourceStatusError
+			r.resourceInfo[uri] = info
+		}
+	}
+	r.mu.Unlock()
+}
+
+func (r *DefaultResourceRegistry) validateAndStoreBulkResource(uri string, resource mcp.Resource) {
+	r.mu.Lock()
+	r.resources[uri] = resource
+	if info, exists := r.resourceInfo[uri]; exists {
+		info.Status = ResourceStatusLoaded
+		r.resourceInfo[uri] = info
+	}
+	r.mu.Unlock()
+}
+
 func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	r.mu.RLock()
 	factories := make(map[string]ResourceFactory)
@@ -230,68 +305,11 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	loaded := 0
 
 	for uri, factory := range factories {
-		resourceConfig := ResourceConfig{
-			Enabled:       true,
-			Config:        make(map[string]interface{}),
-			CacheTimeout:  300,
-			AccessControl: make(map[string]string),
+		if err := r.loadSingleResource(ctx, uri, factory); err != nil {
+			errors = append(errors, err.Error())
+		} else {
+			loaded++
 		}
-
-		resource, err := factory.Create(ctx, resourceConfig)
-		if err != nil {
-			errorMsg := fmt.Sprintf("failed to create resource %s: %v", uri, err)
-			errors = append(errors, errorMsg)
-			r.logger.Error("resource creation failed during load",
-				"uri", uri,
-				"error", err,
-			)
-
-			// Update status to error
-			r.mu.Lock()
-			if info, exists := r.resourceInfo[uri]; exists {
-				if IsValidTransition(info.Status, ResourceStatusError) {
-					info.Status = ResourceStatusError
-					r.resourceInfo[uri] = info
-				}
-			}
-			r.mu.Unlock()
-			continue
-		}
-
-		// Validate resource
-		if err := r.validator.ValidateResource(resource); err != nil {
-			errorMsg := fmt.Sprintf("resource validation failed for %s: %v", uri, err)
-			errors = append(errors, errorMsg)
-			r.logger.Error("resource validation failed during load",
-				"uri", uri,
-				"error", err,
-			)
-
-			// Update status to error
-			r.mu.Lock()
-			if info, exists := r.resourceInfo[uri]; exists {
-				if IsValidTransition(info.Status, ResourceStatusError) {
-					info.Status = ResourceStatusError
-					r.resourceInfo[uri] = info
-				}
-			}
-			r.mu.Unlock()
-			continue
-		}
-
-		// Store resource
-		r.mu.Lock()
-		r.resources[uri] = resource
-		if info, exists := r.resourceInfo[uri]; exists {
-			info.Status = ResourceStatusLoaded
-			r.resourceInfo[uri] = info
-		}
-		r.mu.Unlock()
-
-		loaded++
-		r.logger.Debug("resource loaded successfully",
-			"uri", uri,
-		)
 	}
 
 	r.logger.Info("resource loading completed",
@@ -303,6 +321,37 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	if len(errors) > 0 {
 		return fmt.Errorf("failed to load %d resources: %v", len(errors), errors)
 	}
+
+	return nil
+}
+
+func (r *DefaultResourceRegistry) validateSingleResource(uri string, resource mcp.Resource) error {
+	if err := r.validator.ValidateResource(resource); err != nil {
+		r.logger.Error("resource validation failed",
+			"uri", uri,
+			"error", err,
+		)
+
+		r.mu.Lock()
+		if info, exists := r.resourceInfo[uri]; exists {
+			if IsValidTransition(info.Status, ResourceStatusError) {
+				info.Status = ResourceStatusError
+				r.resourceInfo[uri] = info
+			}
+		}
+		r.mu.Unlock()
+		
+		return fmt.Errorf("validation failed for resource %s: %v", uri, err)
+	}
+
+	r.mu.Lock()
+	if info, exists := r.resourceInfo[uri]; exists {
+		if IsValidTransition(info.Status, ResourceStatusActive) {
+			info.Status = ResourceStatusActive
+			r.resourceInfo[uri] = info
+		}
+	}
+	r.mu.Unlock()
 
 	return nil
 }
@@ -322,33 +371,8 @@ func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 	var errors []string
 
 	for uri, resource := range resources {
-		if err := r.validator.ValidateResource(resource); err != nil {
-			errorMsg := fmt.Sprintf("validation failed for resource %s: %v", uri, err)
-			errors = append(errors, errorMsg)
-			r.logger.Error("resource validation failed",
-				"uri", uri,
-				"error", err,
-			)
-
-			// Update status to error
-			r.mu.Lock()
-			if info, exists := r.resourceInfo[uri]; exists {
-				if IsValidTransition(info.Status, ResourceStatusError) {
-					info.Status = ResourceStatusError
-					r.resourceInfo[uri] = info
-				}
-			}
-			r.mu.Unlock()
-		} else {
-			// Update status to active
-			r.mu.Lock()
-			if info, exists := r.resourceInfo[uri]; exists {
-				if IsValidTransition(info.Status, ResourceStatusActive) {
-					info.Status = ResourceStatusActive
-					r.resourceInfo[uri] = info
-				}
-			}
-			r.mu.Unlock()
+		if err := r.validateSingleResource(uri, resource); err != nil {
+			errors = append(errors, err.Error())
 		}
 	}
 
@@ -364,6 +388,57 @@ func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 	return nil
 }
 
+func (r *DefaultResourceRegistry) validateStatusTransition(uri string, currentStatus, newStatus ResourceStatus) error {
+	if !IsValidTransition(currentStatus, newStatus) {
+		r.logger.Error("invalid status transition attempted",
+			"uri", uri,
+			"current_status", string(currentStatus),
+			"new_status", string(newStatus),
+		)
+		return fmt.Errorf("%w: cannot transition from %s to %s", 
+			ErrInvalidTransition, string(currentStatus), string(newStatus))
+	}
+
+	if !r.running && (newStatus == ResourceStatusActive || newStatus == ResourceStatusLoaded) {
+		r.logger.Error("cannot activate resource when registry is not running",
+			"uri", uri,
+			"new_status", string(newStatus),
+		)
+		return fmt.Errorf("%w: cannot transition to %s when registry is stopped", 
+			ErrRegistryNotRunning, string(newStatus))
+	}
+
+	return nil
+}
+
+func (r *DefaultResourceRegistry) updateResourceStatus(uri string, newStatus ResourceStatus) {
+	if info, exists := r.resourceInfo[uri]; exists {
+		info.Status = newStatus
+		r.resourceInfo[uri] = info
+	}
+}
+
+func (r *DefaultResourceRegistry) handleStatusTransitionCleanup(uri string, newStatus ResourceStatus) {
+	switch newStatus {
+	case ResourceStatusDisabled:
+		if _, exists := r.resources[uri]; exists {
+			delete(r.resources, uri)
+			r.logger.Debug("removed resource instance for disabled resource", "uri", uri)
+		}
+		r.cacheMu.Lock()
+		delete(r.cache, uri)
+		r.cacheMu.Unlock()
+	case ResourceStatusError:
+		if _, exists := r.resources[uri]; exists {
+			delete(r.resources, uri)
+			r.logger.Debug("removed resource instance for error resource", "uri", uri)
+		}
+		r.cacheMu.Lock()
+		delete(r.cache, uri)
+		r.cacheMu.Unlock()
+	}
+}
+
 func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus ResourceStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -373,7 +448,6 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 		"new_status", string(newStatus),
 	)
 
-	// Check if resource exists
 	info, exists := r.resourceInfo[uri]
 	if !exists {
 		r.logger.Error("attempted to transition status of non-existent resource",
@@ -385,54 +459,12 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 
 	currentStatus := info.Status
 	
-	// Validate transition
-	if !IsValidTransition(currentStatus, newStatus) {
-		r.logger.Error("invalid status transition attempted",
-			"uri", uri,
-			"current_status", string(currentStatus),
-			"new_status", string(newStatus),
-		)
-		return fmt.Errorf("%w: cannot transition from %s to %s", 
-			ErrInvalidTransition, string(currentStatus), string(newStatus))
+	if err := r.validateStatusTransition(uri, currentStatus, newStatus); err != nil {
+		return err
 	}
 
-	// Check registry state for certain transitions
-	if !r.running && (newStatus == ResourceStatusActive || newStatus == ResourceStatusLoaded) {
-		r.logger.Error("cannot activate resource when registry is not running",
-			"uri", uri,
-			"new_status", string(newStatus),
-		)
-		return fmt.Errorf("%w: cannot transition to %s when registry is stopped", 
-			ErrRegistryNotRunning, string(newStatus))
-	}
-
-	// Update resource status
-	info.Status = newStatus
-	r.resourceInfo[uri] = info
-
-	// Handle special transitions
-	switch newStatus {
-	case ResourceStatusDisabled:
-		// Remove from active resources map
-		if _, exists := r.resources[uri]; exists {
-			delete(r.resources, uri)
-			r.logger.Debug("removed resource instance for disabled resource", "uri", uri)
-		}
-		// Clear cache
-		r.cacheMu.Lock()
-		delete(r.cache, uri)
-		r.cacheMu.Unlock()
-	case ResourceStatusError:
-		// Remove from active resources map but keep factory
-		if _, exists := r.resources[uri]; exists {
-			delete(r.resources, uri)
-			r.logger.Debug("removed resource instance for error resource", "uri", uri)
-		}
-		// Clear cache
-		r.cacheMu.Lock()
-		delete(r.cache, uri)
-		r.cacheMu.Unlock()
-	}
+	r.updateResourceStatus(uri, newStatus)
+	r.handleStatusTransitionCleanup(uri, newStatus)
 
 	r.logger.Info("resource status transition completed successfully",
 		"uri", uri,
@@ -441,6 +473,43 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 	)
 
 	return nil
+}
+
+func (r *DefaultResourceRegistry) validateRefreshRequest(uri string, info ResourceInfo) error {
+	if info.Status != ResourceStatusActive && info.Status != ResourceStatusLoaded {
+		r.logger.Error("resource refresh not allowed from current status",
+			"uri", uri, "current_status", string(info.Status))
+		return fmt.Errorf("%w: cannot refresh resource from status %s", 
+			ErrRefreshNotAllowed, string(info.Status))
+	}
+	return nil
+}
+
+func (r *DefaultResourceRegistry) recreateResourceInstance(ctx context.Context, uri string, factory ResourceFactory) (mcp.Resource, error) {
+	resource, err := r.createResourceInstance(ctx, factory)
+	if err != nil {
+		r.logger.Error("resource recreation failed during refresh", "uri", uri, "error", err)
+		r.TransitionStatus(uri, ResourceStatusError)
+		return nil, fmt.Errorf("%w: failed to recreate resource %s: %v", ErrResourceRefresh, uri, err)
+	}
+
+	if err := r.validator.ValidateResource(resource); err != nil {
+		r.logger.Error("resource validation failed during refresh", "uri", uri, "error", err)
+		r.TransitionStatus(uri, ResourceStatusError)
+		return nil, fmt.Errorf("%w: resource validation failed for %s: %v", ErrResourceRefresh, uri, err)
+	}
+
+	return resource, nil
+}
+
+func (r *DefaultResourceRegistry) updateResourceAndCache(uri string, resource mcp.Resource) {
+	r.mu.Lock()
+	r.resources[uri] = resource
+	r.mu.Unlock()
+
+	r.cacheMu.Lock()
+	delete(r.cache, uri)
+	r.cacheMu.Unlock()
 }
 
 func (r *DefaultResourceRegistry) RefreshResource(ctx context.Context, uri string) error {
@@ -460,43 +529,16 @@ func (r *DefaultResourceRegistry) RefreshResource(ctx context.Context, uri strin
 
 	r.logger.Info("refreshing resource", "uri", uri)
 
-	// Check if refresh is allowed from current status
-	if info.Status != ResourceStatusActive && info.Status != ResourceStatusLoaded {
-		r.logger.Error("resource refresh not allowed from current status",
-			"uri", uri, "current_status", string(info.Status))
-		return fmt.Errorf("%w: cannot refresh resource from status %s", 
-			ErrRefreshNotAllowed, string(info.Status))
+	if err := r.validateRefreshRequest(uri, info); err != nil {
+		return err
 	}
 
-	// Create new resource instance
-	resourceConfig := ResourceConfig{
-		Enabled:       true,
-		Config:        make(map[string]interface{}),
-		CacheTimeout:  300,
-		AccessControl: make(map[string]string),
-	}
-
-	resource, err := factory.Create(ctx, resourceConfig)
+	resource, err := r.recreateResourceInstance(ctx, uri, factory)
 	if err != nil {
-		r.logger.Error("resource recreation failed during refresh", "uri", uri, "error", err)
-		r.TransitionStatus(uri, ResourceStatusError)
-		return fmt.Errorf("%w: failed to recreate resource %s: %v", ErrResourceRefresh, uri, err)
+		return err
 	}
 
-	if err := r.validator.ValidateResource(resource); err != nil {
-		r.logger.Error("resource validation failed during refresh", "uri", uri, "error", err)
-		r.TransitionStatus(uri, ResourceStatusError)
-		return fmt.Errorf("%w: resource validation failed for %s: %v", ErrResourceRefresh, uri, err)
-	}
-
-	// Update resource and clear cache
-	r.mu.Lock()
-	r.resources[uri] = resource
-	r.mu.Unlock()
-
-	r.cacheMu.Lock()
-	delete(r.cache, uri)
-	r.cacheMu.Unlock()
+	r.updateResourceAndCache(uri, resource)
 
 	r.logger.Info("resource refresh completed successfully", "uri", uri)
 	return nil
@@ -530,13 +572,11 @@ func (r *DefaultResourceRegistry) Stop(ctx context.Context) error {
 
 	r.logger.Info("stopping resource registry")
 
-	// Clear all resources and cache
 	r.resources = make(map[string]mcp.Resource)
 	r.cacheMu.Lock()
 	r.cache = make(map[string]CachedContent)
 	r.cacheMu.Unlock()
 	
-	// Update all statuses to disabled
 	for uri, info := range r.resourceInfo {
 		if IsValidTransition(info.Status, ResourceStatusDisabled) {
 			info.Status = ResourceStatusDisabled
@@ -576,7 +616,6 @@ func (r *DefaultResourceRegistry) Health() RegistryHealth {
 		CircuitBreakers:   make(map[string]string),
 	}
 
-	// Count resource statuses
 	for uri, info := range r.resourceInfo {
 		health.ResourceStatuses[uri] = string(info.Status)
 		
@@ -588,19 +627,16 @@ func (r *DefaultResourceRegistry) Health() RegistryHealth {
 		}
 	}
 
-	// Add circuit breaker statuses
 	for uri, cb := range r.circuitFactories {
 		health.CircuitBreakers[uri] = cb.Status()
 	}
 
-	// Determine overall status
 	if !r.running {
 		health.Status = "stopped"
 	} else if health.ErrorResources > 0 {
 		health.Status = "degraded"
 	}
 
-	// Add error details if any
 	if health.ErrorResources > 0 {
 		health.Errors = append(health.Errors, 
 			fmt.Sprintf("%d resources in error state", health.ErrorResources))
