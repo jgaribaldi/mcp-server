@@ -5,21 +5,20 @@ import (
 	"fmt"
 
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/registry"
 )
 
-// ToolStatus represents the current state of a tool
-type ToolStatus string
+type ToolStatus = registry.LifecycleStatus
 
 const (
-	ToolStatusUnknown    ToolStatus = "unknown"
-	ToolStatusRegistered ToolStatus = "registered"
-	ToolStatusLoaded     ToolStatus = "loaded"
-	ToolStatusActive     ToolStatus = "active"
-	ToolStatusError      ToolStatus = "error"
-	ToolStatusDisabled   ToolStatus = "disabled"
+	ToolStatusUnknown    = registry.StatusUnknown
+	ToolStatusRegistered = registry.StatusRegistered
+	ToolStatusLoaded     = registry.StatusLoaded
+	ToolStatusActive     = registry.StatusActive
+	ToolStatusError      = registry.StatusError
+	ToolStatusDisabled   = registry.StatusDisabled
 )
 
-// ToolInfo provides metadata about available tools
 type ToolInfo struct {
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
@@ -29,7 +28,6 @@ type ToolInfo struct {
 	Status       ToolStatus        `json:"status"`
 }
 
-// ToolConfig represents configuration for a specific tool
 type ToolConfig struct {
 	Enabled    bool                   `json:"enabled"`
 	Config     map[string]interface{} `json:"config"`
@@ -37,18 +35,13 @@ type ToolConfig struct {
 	MaxRetries int                    `json:"max_retries"`
 }
 
-// ToolFactory creates tool instances
 type ToolFactory interface {
-	Name() string
-	Description() string
-	Version() string
-	Capabilities() []string
+	registry.BaseFactory
 	Requirements() map[string]string
 	Create(ctx context.Context, config ToolConfig) (mcp.Tool, error)
 	Validate(config ToolConfig) error
 }
 
-// RegistryHealth represents the health status of the tool registry
 type RegistryHealth struct {
 	Status       string              `json:"status"`
 	ToolCount    int                 `json:"tool_count"`
@@ -59,132 +52,47 @@ type RegistryHealth struct {
 	ToolStatuses map[string]string   `json:"tool_statuses"`
 }
 
-// ToolRegistry manages the collection of available MCP tools
 type ToolRegistry interface {
-	// Tool management
 	Register(name string, factory ToolFactory) error
 	Unregister(name string) error
 	Get(name string) (mcp.Tool, error)
 	GetFactory(name string) (ToolFactory, error)
 	List() []ToolInfo
 
-	// Tool lifecycle
 	LoadTools(ctx context.Context) error
 	ValidateTools(ctx context.Context) error
 	TransitionStatus(name string, newStatus ToolStatus) error
 	RestartTool(ctx context.Context, name string) error
 
-	// Registry operations
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	Health() RegistryHealth
 }
 
-// Tool registry errors
 var (
-	ErrToolNotFound        = fmt.Errorf("tool not found")
-	ErrToolAlreadyExists   = fmt.Errorf("tool already exists")
+	ErrToolNotFound        = registry.ErrEntityNotFound
+	ErrToolAlreadyExists   = registry.ErrEntityAlreadyExists
 	ErrInvalidToolName     = fmt.Errorf("invalid tool name")
-	ErrToolValidation      = fmt.Errorf("tool validation failed")
-	ErrRegistryNotRunning  = fmt.Errorf("registry not running")
-	ErrToolCreation        = fmt.Errorf("tool creation failed")
-	ErrInvalidTransition   = fmt.Errorf("invalid status transition")
-	ErrTransitionNotAllowed = fmt.Errorf("status transition not allowed")
+	ErrToolValidation      = registry.ErrEntityValidation
+	ErrRegistryNotRunning  = registry.ErrRegistryNotRunning
+	ErrToolCreation        = registry.ErrEntityCreation
+	ErrInvalidTransition   = registry.ErrInvalidTransition
+	ErrTransitionNotAllowed = registry.ErrTransitionNotAllowed
 	ErrToolRestart         = fmt.Errorf("tool restart failed")
 	ErrRestartNotAllowed   = fmt.Errorf("tool restart not allowed")
 )
 
-// ToolValidationError represents a validation error with details
-type ToolValidationError struct {
-	Field   string `json:"field"`
-	Value   string `json:"value"`
-	Message string `json:"message"`
-}
+type ToolValidationError = registry.ValidationError
+type ToolValidationErrors = registry.ValidationErrors
 
-func (e ToolValidationError) Error() string {
-	return fmt.Sprintf("validation error in field '%s' (value: '%s'): %s", e.Field, e.Value, e.Message)
-}
+type StatusTransition = registry.StatusTransition
 
-// StatusTransition represents a valid status transition
-type StatusTransition struct {
-	From ToolStatus
-	To   ToolStatus
-}
+var ValidStatusTransitions = registry.ValidStatusTransitions
 
-// ValidStatusTransitions defines the allowed status transitions
-var ValidStatusTransitions = map[StatusTransition]bool{
-	// From registered
-	{ToolStatusRegistered, ToolStatusLoaded}:   true,
-	{ToolStatusRegistered, ToolStatusError}:    true,
-	{ToolStatusRegistered, ToolStatusDisabled}: true,
-	
-	// From loaded
-	{ToolStatusLoaded, ToolStatusActive}:   true,
-	{ToolStatusLoaded, ToolStatusError}:    true,
-	{ToolStatusLoaded, ToolStatusDisabled}: true,
-	
-	// From active
-	{ToolStatusActive, ToolStatusError}:    true,
-	{ToolStatusActive, ToolStatusDisabled}: true,
-	{ToolStatusActive, ToolStatusLoaded}:   true, // downgrade
-	
-	// From error
-	{ToolStatusError, ToolStatusRegistered}: true, // restart
-	{ToolStatusError, ToolStatusDisabled}:   true,
-	
-	// From disabled
-	{ToolStatusDisabled, ToolStatusRegistered}: true, // enable
-	{ToolStatusDisabled, ToolStatusError}:      true,
-}
-
-// IsValidTransition checks if a status transition is allowed
 func IsValidTransition(from, to ToolStatus) bool {
-	if from == to {
-		return true // same status is always valid
-	}
-	return ValidStatusTransitions[StatusTransition{From: from, To: to}]
+	return registry.IsValidTransition(from, to)
 }
 
-// GetAllowedTransitions returns all valid transitions from a given status
 func GetAllowedTransitions(from ToolStatus) []ToolStatus {
-	var allowed []ToolStatus
-	
-	// Same status is always allowed
-	allowed = append(allowed, from)
-	
-	// Check all possible transitions
-	for transition := range ValidStatusTransitions {
-		if transition.From == from {
-			allowed = append(allowed, transition.To)
-		}
-	}
-	
-	return allowed
-}
-
-// ToolValidationErrors represents multiple validation errors
-type ToolValidationErrors []ToolValidationError
-
-func (e ToolValidationErrors) Error() string {
-	if len(e) == 0 {
-		return ""
-	}
-	if len(e) == 1 {
-		return e[0].Error()
-	}
-	return fmt.Sprintf("%d validation errors: %s (and %d more)", len(e), e[0].Error(), len(e)-1)
-}
-
-// Add appends a validation error
-func (e *ToolValidationErrors) Add(field, value, message string) {
-	*e = append(*e, ToolValidationError{
-		Field:   field,
-		Value:   value,
-		Message: message,
-	})
-}
-
-// HasErrors returns true if there are validation errors
-func (e ToolValidationErrors) HasErrors() bool {
-	return len(e) > 0
+	return registry.GetAllowedTransitions(from)
 }

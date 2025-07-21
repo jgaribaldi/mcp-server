@@ -14,19 +14,19 @@ func NewEchoFactory() *EchoFactory {
 	return &EchoFactory{}
 }
 
-func (f *EchoFactory) Name() string {
+func (f *EchoFactory) GetName() string {
 	return "echo"
 }
 
-func (f *EchoFactory) Description() string {
+func (f *EchoFactory) GetDescription() string {
 	return "Simple text manipulation tool for testing and demonstration"
 }
 
-func (f *EchoFactory) Version() string {
+func (f *EchoFactory) GetVersion() string {
 	return "1.0.0"
 }
 
-func (f *EchoFactory) Capabilities() []string {
+func (f *EchoFactory) GetCapabilities() []string {
 	return []string{"text_processing", "demonstration"}
 }
 

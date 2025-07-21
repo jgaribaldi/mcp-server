@@ -304,7 +304,7 @@ func TestToolValidator_ValidateJSONSchema(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.validateJSONSchema(json.RawMessage(tt.schema))
+			err := validator.ValidateJSONInput([]byte(tt.schema))
 			if (err != nil) != tt.wantError {
 				t.Errorf("validateJSONSchema() error = %v, wantError %v", err, tt.wantError)
 			}
@@ -312,7 +312,7 @@ func TestToolValidator_ValidateJSONSchema(t *testing.T) {
 	}
 }
 
-func TestToolValidator_ValidateToolConfig(t *testing.T) {
+func TestToolValidator_ValidateConfig(t *testing.T) {
 	validator := createTestValidator()
 
 	// Valid config
@@ -323,7 +323,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		MaxRetries: 3,
 	}
 
-	err := validator.ValidateToolConfig(validConfig)
+	err := validator.ValidateConfig(validConfig)
 	if err != nil {
 		t.Errorf("Expected no error for valid config, got: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		MaxRetries: 3,
 	}
 
-	err = validator.ValidateToolConfig(negativeTimeoutConfig)
+	err = validator.ValidateConfig(negativeTimeoutConfig)
 	if err == nil {
 		t.Error("Expected error for negative timeout, got nil")
 	}
@@ -347,7 +347,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		MaxRetries: 3,
 	}
 
-	err = validator.ValidateToolConfig(highTimeoutConfig)
+	err = validator.ValidateConfig(highTimeoutConfig)
 	if err == nil {
 		t.Error("Expected error for too high timeout, got nil")
 	}
@@ -359,7 +359,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		MaxRetries: -1,
 	}
 
-	err = validator.ValidateToolConfig(negativeRetriesConfig)
+	err = validator.ValidateConfig(negativeRetriesConfig)
 	if err == nil {
 		t.Error("Expected error for negative max retries, got nil")
 	}
@@ -371,7 +371,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		MaxRetries: 11,
 	}
 
-	err = validator.ValidateToolConfig(highRetriesConfig)
+	err = validator.ValidateConfig(highRetriesConfig)
 	if err == nil {
 		t.Error("Expected error for too high max retries, got nil")
 	}
@@ -387,7 +387,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		tooManyConfigConfig.Config[fmt.Sprintf("key%d", i)] = "value"
 	}
 
-	err = validator.ValidateToolConfig(tooManyConfigConfig)
+	err = validator.ValidateConfig(tooManyConfigConfig)
 	if err == nil {
 		t.Error("Expected error for too many config items, got nil")
 	}
@@ -400,7 +400,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		Config:     map[string]interface{}{"": "value"},
 	}
 
-	err = validator.ValidateToolConfig(emptyKeyConfig)
+	err = validator.ValidateConfig(emptyKeyConfig)
 	if err == nil {
 		t.Error("Expected error for empty config key, got nil")
 	}
@@ -413,7 +413,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		Config:     map[string]interface{}{strings.Repeat("a", 65): "value"},
 	}
 
-	err = validator.ValidateToolConfig(longKeyConfig)
+	err = validator.ValidateConfig(longKeyConfig)
 	if err == nil {
 		t.Error("Expected error for too long config key, got nil")
 	}
@@ -426,7 +426,7 @@ func TestToolValidator_ValidateToolConfig(t *testing.T) {
 		Config:     map[string]interface{}{"key": strings.Repeat("a", 1025)},
 	}
 
-	err = validator.ValidateToolConfig(longValueConfig)
+	err = validator.ValidateConfig(longValueConfig)
 	if err == nil {
 		t.Error("Expected error for too long config value, got nil")
 	}
