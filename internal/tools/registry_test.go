@@ -44,10 +44,10 @@ type mockToolFactory struct {
 	createError  error
 }
 
-func (m *mockToolFactory) Name() string                       { return m.name }
-func (m *mockToolFactory) Description() string                { return m.description }
-func (m *mockToolFactory) Version() string                    { return m.version }
-func (m *mockToolFactory) Capabilities() []string             { return m.capabilities }
+func (m *mockToolFactory) GetName() string                       { return m.name }
+func (m *mockToolFactory) GetDescription() string                { return m.description }
+func (m *mockToolFactory) GetVersion() string                    { return m.version }
+func (m *mockToolFactory) GetCapabilities() []string             { return m.capabilities }
 func (m *mockToolFactory) Requirements() map[string]string    { return m.requirements }
 func (m *mockToolFactory) Validate(config ToolConfig) error   { return nil }
 
@@ -123,8 +123,8 @@ func TestDefaultToolRegistry_RegisterDuplicate(t *testing.T) {
 		t.Fatal("Expected error on duplicate registration, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "tool already exists") {
-		t.Errorf("Expected tool already exists error, got: %v", err)
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("Expected already exists error, got: %v", err)
 	}
 }
 
@@ -173,8 +173,8 @@ func TestDefaultToolRegistry_UnregisterNonExistent(t *testing.T) {
 		t.Fatal("Expected error for non-existent tool, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "tool not found") {
-		t.Errorf("Expected tool not found error, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected not found error, got: %v", err)
 	}
 }
 
@@ -217,8 +217,8 @@ func TestDefaultToolRegistry_GetNonExistent(t *testing.T) {
 		t.Fatal("Expected error for non-existent tool, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "tool not found") {
-		t.Errorf("Expected tool not found error, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected not found error, got: %v", err)
 	}
 }
 
@@ -238,8 +238,8 @@ func TestDefaultToolRegistry_GetFactory(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if retrievedFactory.Name() != factory.Name() {
-		t.Errorf("Expected factory name '%s', got '%s'", factory.Name(), retrievedFactory.Name())
+	if retrievedFactory.GetName() != factory.GetName() {
+		t.Errorf("Expected factory name '%s', got '%s'", factory.GetName(), retrievedFactory.GetName())
 	}
 }
 

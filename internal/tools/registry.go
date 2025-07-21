@@ -62,8 +62,8 @@ func (r *DefaultToolRegistry) Register(name string, factory ToolFactory) error {
 
 	r.logger.Info("registering tool factory",
 		"name", name,
-		"description", factory.Description(),
-		"version", factory.Version(),
+		"description", factory.GetDescription(),
+		"version", factory.GetVersion(),
 	)
 
 	// Validate tool name
@@ -102,10 +102,10 @@ func (r *DefaultToolRegistry) Register(name string, factory ToolFactory) error {
 
 	// Create tool info
 	info := ToolInfo{
-		Name:         factory.Name(),
-		Description:  factory.Description(),
-		Version:      factory.Version(),
-		Capabilities: factory.Capabilities(),
+		Name:         factory.GetName(),
+		Description:  factory.GetDescription(),
+		Version:      factory.GetVersion(),
+		Capabilities: factory.GetCapabilities(),
 		Requirements: factory.Requirements(),
 		Status:       ToolStatusRegistered,
 	}
@@ -113,7 +113,7 @@ func (r *DefaultToolRegistry) Register(name string, factory ToolFactory) error {
 
 	r.logger.Info("tool factory registered successfully",
 		"name", name,
-		"capabilities", factory.Capabilities(),
+		"capabilities", factory.GetCapabilities(),
 	)
 
 	return nil

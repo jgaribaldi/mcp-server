@@ -149,15 +149,15 @@ func TestEchoFactoryDirectly(t *testing.T) {
 		t.Fatalf("Expected to get echo factory, got error: %v", err)
 	}
 	
-	if factory.Name() != "echo" {
-		t.Errorf("Expected factory name 'echo', got '%s'", factory.Name())
+	if factory.GetName() != "echo" {
+		t.Errorf("Expected factory name 'echo', got '%s'", factory.GetName())
 	}
 	
-	if factory.Description() != "Simple text manipulation tool for testing and demonstration" {
-		t.Errorf("Expected factory description 'Simple text manipulation tool for testing and demonstration', got '%s'", factory.Description())
+	if factory.GetDescription() != "Simple text manipulation tool for testing and demonstration" {
+		t.Errorf("Expected factory description 'Simple text manipulation tool for testing and demonstration', got '%s'", factory.GetDescription())
 	}
 	
-	if factory.Version() != "1.0.0" {
-		t.Errorf("Expected factory version '1.0.0', got '%s'", factory.Version())
+	if factory.GetVersion() != "1.0.0" {
+		t.Errorf("Expected factory version '1.0.0', got '%s'", factory.GetVersion())
 	}
 }
