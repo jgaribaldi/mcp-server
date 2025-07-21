@@ -68,7 +68,7 @@ func setupServers(cfg *config.Config, log *logger.Logger) (*server.Server, error
 
 	srv := server.New(cfg, log)
 
-	if err := registerAllTools(srv.Registry(), log); err != nil {
+	if err := registerAllTools(srv.ToolRegistry(), log); err != nil {
 		return nil, fmt.Errorf("failed to register tools: %w", err)
 	}
 
@@ -135,3 +135,4 @@ func gracefulShutdown(srv *server.Server, log *logger.Logger) {
 
 	log.Info("All servers stopped gracefully")
 }
+

@@ -201,7 +201,7 @@ func TestHandleToolsHealth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := createTestServer()
-			server.registry = &MockToolRegistry{
+			server.toolRegistry = &MockToolRegistry{
 				health:   tt.registryHealth,
 				toolList: tt.toolList,
 			}
@@ -603,7 +603,7 @@ func TestRestartTool(t *testing.T) {
 			server := createTestServer()
 			
 			if tt.toolName == "test-tool" {
-				server.registry = &MockToolRegistry{
+				server.toolRegistry = &MockToolRegistry{
 					toolList: []tools.ToolInfo{
 						{
 							Name:   tt.toolName,
@@ -612,12 +612,12 @@ func TestRestartTool(t *testing.T) {
 					},
 				}
 			} else {
-				server.registry = &MockToolRegistry{
+				server.toolRegistry = &MockToolRegistry{
 					toolList: []tools.ToolInfo{},
 				}
 			}
 
-			err := server.registry.RestartTool(context.Background(), tt.toolName)
+			err := server.toolRegistry.RestartTool(context.Background(), tt.toolName)
 
 			if tt.expectError {
 				if err == nil {
@@ -634,7 +634,7 @@ func TestRestartTool(t *testing.T) {
 				}
 
 				// Check final status for successful restarts
-				toolList := server.registry.List()
+				toolList := server.toolRegistry.List()
 				found := false
 				for _, tool := range toolList {
 					if tool.Name == tt.toolName {
@@ -666,14 +666,14 @@ func TestRestartToolStatusTransitions(t *testing.T) {
 		},
 	}
 	
-	server.registry = mockRegistry
+	server.toolRegistry = mockRegistry
 
-	err := server.registry.RestartTool(context.Background(), "test-tool")
+	err := server.toolRegistry.RestartTool(context.Background(), "test-tool")
 	if err != nil {
 		t.Fatalf("unexpected error during restart: %v", err)
 	}
 
-	toolList := server.registry.List()
+	toolList := server.toolRegistry.List()
 	for _, tool := range toolList {
 		if tool.Name == "test-tool" {
 			if tool.Status != tools.ToolStatusLoaded {

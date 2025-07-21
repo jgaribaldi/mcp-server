@@ -11,6 +11,7 @@ import (
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/resources"
 	"mcp-server/internal/tools"
 )
 
@@ -109,13 +110,14 @@ type PerformanceMetrics struct {
 
 // Server represents the HTTP server
 type Server struct {
-	httpServer *http.Server
-	mcpServer  mcp.MCPServer
-	registry   tools.ToolRegistry
-	logger     *logger.Logger
-	config     *config.Config
-	mux        *http.ServeMux
-	startTime  time.Time
+	httpServer       *http.Server
+	mcpServer        mcp.MCPServer
+	toolRegistry     tools.ToolRegistry
+	resourceRegistry resources.ResourceRegistry
+	logger           *logger.Logger
+	config           *config.Config
+	mux              *http.ServeMux
+	startTime        time.Time
 }
 
 // New creates a new HTTP server instance
@@ -123,12 +125,21 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 	mux := http.NewServeMux()
 
 	// Create tool registry using factory
-	registryFactory := tools.NewRegistryFactory(cfg, log)
-	registry, err := registryFactory.CreateRegistry()
+	toolRegistryFactory := tools.NewRegistryFactory(cfg, log)
+	toolRegistry, err := toolRegistryFactory.CreateRegistry()
 	if err != nil {
 		log.Error("failed to create tool registry", "error", err)
 		// Fall back to default registry for robustness
-		registry = tools.NewDefaultToolRegistry(cfg, log)
+		toolRegistry = tools.NewDefaultToolRegistry(cfg, log)
+	}
+
+	// Create resource registry using factory
+	resourceRegistryFactory := resources.NewRegistryFactory(cfg, log)
+	resourceRegistry, err := resourceRegistryFactory.CreateRegistry()
+	if err != nil {
+		log.Error("failed to create resource registry", "error", err)
+		// Fall back to default registry for robustness
+		resourceRegistry = resources.NewDefaultResourceRegistry(cfg, log)
 	}
 
 	// Create MCP server instance
@@ -139,12 +150,13 @@ func New(cfg *config.Config, log *logger.Logger) *Server {
 	mcpSrv := mcp.NewServer(mcpImpl, cfg, log)
 
 	server := &Server{
-		logger:    log,
-		config:    cfg,
-		mux:       mux,
-		mcpServer: mcpSrv,
-		registry:  registry,
-		startTime: time.Now(),
+		logger:           log,
+		config:           cfg,
+		mux:              mux,
+		mcpServer:        mcpSrv,
+		toolRegistry:     toolRegistry,
+		resourceRegistry: resourceRegistry,
+		startTime:        time.Now(),
 		httpServer: &http.Server{
 			Addr:           fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 			Handler:        mux,
@@ -167,6 +179,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/tools/health", s.handleToolsHealth)
+	s.mux.HandleFunc("/resources/health", s.handleResourcesHealth)
 }
 
 // handleHealth handles health check requests
@@ -269,19 +282,32 @@ func (s *Server) StartMCP(ctx context.Context) error {
 	s.logger.Info("Starting MCP server and tool registry")
 	
 	// Start tool registry first
-	if err := s.registry.Start(ctx); err != nil {
+	if err := s.toolRegistry.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start tool registry: %w", err)
 	}
 	s.logger.Info("Tool registry started successfully")
+	
+	// Start resource registry
+	if err := s.resourceRegistry.Start(ctx); err != nil {
+		// If resource registry fails to start, stop the tool registry
+		if stopErr := s.toolRegistry.Stop(ctx); stopErr != nil {
+			s.logger.Error("failed to stop tool registry after resource registry start failure", "error", stopErr)
+		}
+		return fmt.Errorf("failed to start resource registry: %w", err)
+	}
+	s.logger.Info("Resource registry started successfully")
 	
 	// Create stdio transport for MCP server
 	transport := mcp.NewStdioTransport()
 	
 	// Start the MCP server
 	if err := s.mcpServer.Start(ctx, transport); err != nil {
-		// If MCP server fails to start, stop the registry
-		if stopErr := s.registry.Stop(ctx); stopErr != nil {
-			s.logger.Error("failed to stop registry after MCP server start failure", "error", stopErr)
+		// If MCP server fails to start, stop the registries
+		if stopErr := s.resourceRegistry.Stop(ctx); stopErr != nil {
+			s.logger.Error("failed to stop resource registry after MCP server start failure", "error", stopErr)
+		}
+		if stopErr := s.toolRegistry.Stop(ctx); stopErr != nil {
+			s.logger.Error("failed to stop tool registry after MCP server start failure", "error", stopErr)
 		}
 		return fmt.Errorf("failed to start MCP server: %w", err)
 	}
@@ -302,8 +328,16 @@ func (s *Server) StopMCP(ctx context.Context) error {
 		s.logger.Info("MCP server stopped successfully")
 	}
 	
+	// Stop resource registry
+	if err := s.resourceRegistry.Stop(ctx); err != nil {
+		s.logger.Error("failed to stop resource registry", "error", err)
+		// Continue to stop tool registry even if resource registry fails to stop
+	} else {
+		s.logger.Info("Resource registry stopped successfully")
+	}
+	
 	// Stop tool registry
-	if err := s.registry.Stop(ctx); err != nil {
+	if err := s.toolRegistry.Stop(ctx); err != nil {
 		return fmt.Errorf("failed to stop tool registry: %w", err)
 	}
 	s.logger.Info("Tool registry stopped successfully")
@@ -321,8 +355,12 @@ func (s *Server) IsMCPRunning() bool {
 // Data Collection Functions - Single responsibility: gather raw data
 
 // collectRegistryData gathers registry health and tool information
-func (s *Server) collectRegistryData() (tools.RegistryHealth, []tools.ToolInfo) {
-	return s.registry.Health(), s.registry.List()
+func (s *Server) collectRegistryData() (tools.RegistryHealth, []tools.ToolInfo, resources.RegistryHealth, []resources.ResourceInfo) {
+	toolHealth := s.toolRegistry.Health()
+	toolList := s.toolRegistry.List()
+	resourceHealth := s.resourceRegistry.Health()
+	resourceList := s.resourceRegistry.List()
+	return toolHealth, toolList, resourceHealth, resourceList
 }
 
 // collectPerformanceData gathers runtime performance statistics
@@ -419,17 +457,25 @@ func (s *Server) determineOverallHealth(registryHealth tools.RegistryHealth) str
 
 // buildMetricsResponse collects data and constructs the complete metrics response
 func (s *Server) buildMetricsResponse() MetricsResponse {
-	registryHealth, toolList := s.collectRegistryData()
+	toolHealth, toolList, resourceHealth, _ := s.collectRegistryData()
 	memStats := s.collectPerformanceData()
 	uptime := s.collectUptimeData()
 	
-	registryMetrics := s.calculateRegistryMetrics(registryHealth, toolList, uptime)
-	adapterMetrics := s.calculateAdapterMetrics(registryHealth, registryMetrics.SuccessRate)
-	toolMetrics := s.calculateToolMetrics(registryHealth)
+	registryMetrics := s.calculateRegistryMetrics(toolHealth, toolList, uptime)
+	adapterMetrics := s.calculateAdapterMetrics(toolHealth, registryMetrics.SuccessRate)
+	toolMetrics := s.calculateToolMetrics(toolHealth)
 	perfMetrics := s.calculatePerformanceMetrics(memStats)
 	
+	// Include resource registry status in overall health determination
+	overallStatus := s.determineOverallHealth(toolHealth)
+	if resourceHealth.Status == "degraded" || resourceHealth.ErrorResources > 0 {
+		overallStatus = "degraded"
+	} else if resourceHealth.Status == "stopped" {
+		overallStatus = "degraded"
+	}
+	
 	return MetricsResponse{
-		Status:      s.determineOverallHealth(registryHealth),
+		Status:      overallStatus,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		Registry:    registryMetrics,
 		Adapter:     adapterMetrics,
@@ -442,7 +488,12 @@ func (s *Server) buildMetricsResponse() MetricsResponse {
 
 // collectToolHealthData gathers detailed tool health information
 func (s *Server) collectToolHealthData() (tools.RegistryHealth, []tools.ToolInfo) {
-	return s.registry.Health(), s.registry.List()
+	return s.toolRegistry.Health(), s.toolRegistry.List()
+}
+
+// collectResourceHealthData gathers detailed resource health information
+func (s *Server) collectResourceHealthData() (resources.RegistryHealth, []resources.ResourceInfo) {
+	return s.resourceRegistry.Health(), s.resourceRegistry.List()
 }
 
 // buildToolHealthSummary calculates summary statistics from tool list
@@ -551,6 +602,150 @@ func (s *Server) handleToolsHealth(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// ResourcesHealthResponse represents detailed resource health information
+type ResourcesHealthResponse struct {
+	Status    string                        `json:"status"`
+	Timestamp string                        `json:"timestamp"`
+	Summary   ResourceHealthSummary         `json:"summary"`
+	Resources map[string]ResourceHealthInfo `json:"resources"`
+}
+
+// ResourceHealthSummary provides overall resource health statistics
+type ResourceHealthSummary struct {
+	Total      int `json:"total"`
+	Active     int `json:"active"`
+	Loaded     int `json:"loaded"`
+	Registered int `json:"registered"`
+	Error      int `json:"error"`
+	Disabled   int `json:"disabled"`
+	Cached     int `json:"cached"`
+}
+
+// ResourceHealthInfo provides detailed information about a specific resource
+type ResourceHealthInfo struct {
+	URI          string    `json:"uri"`
+	Name         string    `json:"name"`
+	Status       string    `json:"status"`
+	Description  string    `json:"description"`
+	MimeType     string    `json:"mime_type"`
+	Version      string    `json:"version"`
+	Tags         []string  `json:"tags"`
+	Capabilities []string  `json:"capabilities"`
+	LastCheck    string    `json:"last_check"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+}
+
+// buildResourceHealthSummary calculates summary statistics from resource list
+func (s *Server) buildResourceHealthSummary(resourceList []resources.ResourceInfo, resourceHealth resources.RegistryHealth) ResourceHealthSummary {
+	summary := ResourceHealthSummary{
+		Total:  len(resourceList),
+		Cached: resourceHealth.CachedResources,
+	}
+	
+	for _, resource := range resourceList {
+		switch resource.Status {
+		case resources.ResourceStatusActive:
+			summary.Active++
+		case resources.ResourceStatusLoaded:
+			summary.Loaded++
+		case resources.ResourceStatusRegistered:
+			summary.Registered++
+		case resources.ResourceStatusError:
+			summary.Error++
+		case resources.ResourceStatusDisabled:
+			summary.Disabled++
+		}
+	}
+	
+	return summary
+}
+
+// buildResourceHealthDetails creates detailed resource health information map
+func (s *Server) buildResourceHealthDetails(resourceList []resources.ResourceInfo, resourceHealth resources.RegistryHealth) map[string]ResourceHealthInfo {
+	resourceDetails := make(map[string]ResourceHealthInfo)
+	
+	for _, resource := range resourceList {
+		details := ResourceHealthInfo{
+			URI:          resource.URI,
+			Name:         resource.Name,
+			Status:       string(resource.Status),
+			Description:  resource.Description,
+			MimeType:     resource.MimeType,
+			Version:      resource.Version,
+			Tags:         resource.Tags,
+			Capabilities: resource.Capabilities,
+			LastCheck:    resourceHealth.LastCheck,
+		}
+		
+		if resource.Status == resources.ResourceStatusError {
+			details.ErrorMessage = "Resource failed validation or creation"
+		}
+		
+		resourceDetails[resource.URI] = details
+	}
+	
+	return resourceDetails
+}
+
+// determineResourcesOverallHealth determines overall resources health status
+func (s *Server) determineResourcesOverallHealth(summary ResourceHealthSummary, resourceHealth resources.RegistryHealth) string {
+	if resourceHealth.Status == "stopped" {
+		return "stopped"
+	}
+	if summary.Error > 0 {
+		return "degraded"
+	}
+	if summary.Active == 0 && summary.Total > 0 {
+		return "degraded"
+	}
+	return "healthy"
+}
+
+// buildResourcesHealthResponse orchestrates resources health data collection and response building
+func (s *Server) buildResourcesHealthResponse() ResourcesHealthResponse {
+	resourceHealth, resourceList := s.collectResourceHealthData()
+	summary := s.buildResourceHealthSummary(resourceList, resourceHealth)
+	resourceDetails := s.buildResourceHealthDetails(resourceList, resourceHealth)
+	
+	return ResourcesHealthResponse{
+		Status:    s.determineResourcesOverallHealth(summary, resourceHealth),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Summary:   summary,
+		Resources: resourceDetails,
+	}
+}
+
+// handleResourcesHealth handles detailed resources health requests
+func (s *Server) handleResourcesHealth(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("resources health requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	response := s.buildResourcesHealthResponse()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal resources health response", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("resources health request completed successfully",
+		"status", response.Status,
+		"total_resources", response.Summary.Total,
+		"active_resources", response.Summary.Active,
+		"error_resources", response.Summary.Error,
+		"cached_resources", response.Summary.Cached,
+	)
+}
+
 // handleMetrics handles metrics endpoint requests
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("metrics requested",
@@ -580,7 +775,12 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// Registry returns the tool registry for external tool registration
-func (s *Server) Registry() tools.ToolRegistry {
-	return s.registry
+// ToolRegistry returns the tool registry for external tool registration
+func (s *Server) ToolRegistry() tools.ToolRegistry {
+	return s.toolRegistry
+}
+
+// ResourceRegistry returns the resource registry for external resource registration
+func (s *Server) ResourceRegistry() resources.ResourceRegistry {
+	return s.resourceRegistry
 }

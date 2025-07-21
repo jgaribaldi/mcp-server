@@ -65,6 +65,14 @@ type MCPConfig struct {
 	DebugMode       bool
 	EnableMetrics   bool
 	BufferSize      int
+	ResourceCache   ResourceCacheConfig
+}
+
+// ResourceCacheConfig holds resource caching configuration
+type ResourceCacheConfig struct {
+	DefaultTimeout int  `json:"default_timeout_seconds"`
+	MaxSize        int  `json:"max_size"`
+	Enabled        bool `json:"enabled"`
 }
 
 // ValidationErrors represents multiple validation errors
@@ -105,12 +113,19 @@ type FileLoggerConfig struct {
 }
 
 type FileMCPConfig struct {
-	ProtocolTimeout string `yaml:"protocol_timeout"`
-	MaxTools        int    `yaml:"max_tools"`
-	MaxResources    int    `yaml:"max_resources"`
-	DebugMode       bool   `yaml:"debug_mode"`
-	EnableMetrics   bool   `yaml:"enable_metrics"`
-	BufferSize      int    `yaml:"buffer_size"`
+	ProtocolTimeout string              `yaml:"protocol_timeout"`
+	MaxTools        int                 `yaml:"max_tools"`
+	MaxResources    int                 `yaml:"max_resources"`
+	DebugMode       bool                `yaml:"debug_mode"`
+	EnableMetrics   bool                `yaml:"enable_metrics"`
+	BufferSize      int                 `yaml:"buffer_size"`
+	ResourceCache   FileResourceCacheConfig `yaml:"resource_cache"`
+}
+
+type FileResourceCacheConfig struct {
+	DefaultTimeout int  `yaml:"default_timeout_seconds"`
+	MaxSize        int  `yaml:"max_size"`
+	Enabled        bool `yaml:"enabled"`
 }
 
 // getEnvBool gets environment variable as boolean with default value
@@ -235,6 +250,17 @@ func mergeFileConfig(base *Config, file *FileConfig) *Config {
 		result.MCP.BufferSize = file.MCP.BufferSize
 	}
 	
+	// Merge resource cache config (only if not overridden by env vars)
+	if file.MCP.ResourceCache.DefaultTimeout != 0 && os.Getenv("MCP_RESOURCE_CACHE_TIMEOUT") == "" {
+		result.MCP.ResourceCache.DefaultTimeout = file.MCP.ResourceCache.DefaultTimeout
+	}
+	if file.MCP.ResourceCache.MaxSize != 0 && os.Getenv("MCP_RESOURCE_CACHE_MAX_SIZE") == "" {
+		result.MCP.ResourceCache.MaxSize = file.MCP.ResourceCache.MaxSize
+	}
+	if os.Getenv("MCP_RESOURCE_CACHE_ENABLED") == "" {
+		result.MCP.ResourceCache.Enabled = file.MCP.ResourceCache.Enabled
+	}
+	
 	return &result
 }
 
@@ -264,6 +290,11 @@ func Load() (*Config, error) {
 			DebugMode:       getEnvBool("MCP_DEBUG_MODE", DefaultDebugMode),
 			EnableMetrics:   getEnvBool("MCP_ENABLE_METRICS", DefaultEnableMetrics),
 			BufferSize:      getEnvInt("MCP_BUFFER_SIZE", DefaultBufferSize),
+			ResourceCache: ResourceCacheConfig{
+				DefaultTimeout: getEnvInt("MCP_RESOURCE_CACHE_TIMEOUT", 300),
+				MaxSize:        getEnvInt("MCP_RESOURCE_CACHE_MAX_SIZE", 1000),
+				Enabled:        getEnvBool("MCP_RESOURCE_CACHE_ENABLED", true),
+			},
 		},
 	}
 	
@@ -370,6 +401,19 @@ func (c *Config) Validate() error {
 		errors = append(errors, fmt.Sprintf("MCP buffer size very large: %d (hint: typically 4KB-64KB)", c.MCP.BufferSize))
 	}
 	
+	// Resource cache validation
+	if c.MCP.ResourceCache.DefaultTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("resource cache default timeout cannot be negative: %d", c.MCP.ResourceCache.DefaultTimeout))
+	} else if c.MCP.ResourceCache.DefaultTimeout > 86400 {
+		errors = append(errors, fmt.Sprintf("resource cache default timeout too large: %d seconds (hint: typically 300-3600 seconds)", c.MCP.ResourceCache.DefaultTimeout))
+	}
+	
+	if c.MCP.ResourceCache.MaxSize < 0 {
+		errors = append(errors, fmt.Sprintf("resource cache max size cannot be negative: %d", c.MCP.ResourceCache.MaxSize))
+	} else if c.MCP.ResourceCache.MaxSize > 100000 {
+		errors = append(errors, fmt.Sprintf("resource cache max size very large: %d (hint: typically 100-10000)", c.MCP.ResourceCache.MaxSize))
+	}
+	
 	if len(errors) > 0 {
 		return errors
 	}
@@ -381,11 +425,13 @@ func (c *Config) String() string {
 	return fmt.Sprintf(`Configuration Summary:
 Server: %s:%d (timeouts: read=%v, write=%v, idle=%v)
 Logger: level=%s, format=%s, service=%s
-MCP: timeout=%v, tools=%d, resources=%d, debug=%v`,
+MCP: timeout=%v, tools=%d, resources=%d, debug=%v
+Resource Cache: enabled=%v, timeout=%ds, max_size=%d`,
 		c.Server.Host, c.Server.Port,
 		c.Server.ReadTimeout, c.Server.WriteTimeout, c.Server.IdleTimeout,
 		c.Logger.Level, c.Logger.Format, c.Logger.Service,
-		c.MCP.ProtocolTimeout, c.MCP.MaxTools, c.MCP.MaxResources, c.MCP.DebugMode)
+		c.MCP.ProtocolTimeout, c.MCP.MaxTools, c.MCP.MaxResources, c.MCP.DebugMode,
+		c.MCP.ResourceCache.Enabled, c.MCP.ResourceCache.DefaultTimeout, c.MCP.ResourceCache.MaxSize)
 }
 
 // ToJSON exports configuration as JSON for debugging
