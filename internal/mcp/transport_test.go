@@ -57,33 +57,6 @@ func (t *TestableStdioTransport) Close() error {
 	return nil
 }
 
-func TestNewStdioTransport(t *testing.T) {
-	// TODO: remove useless test
-	transport := NewStdioTransport()
-	if transport == nil {
-		t.Fatal("NewStdioTransport returned nil")
-	}
-
-	// Verify it implements Transport interface
-	var _ Transport = transport
-}
-
-func TestTransportFactory(t *testing.T) {
-	// TODO: remove useless test
-	factory := NewTransportFactory()
-	if factory == nil {
-		t.Fatal("NewTransportFactory returned nil")
-	}
-
-	transport := factory.CreateStdioTransport()
-	if transport == nil {
-		t.Fatal("CreateStdioTransport returned nil")
-	}
-
-	// Verify it implements Transport interface
-	var _ Transport = transport
-}
-
 func TestStdioTransportReadWrite(t *testing.T) {
 	input := "test message\n"
 	reader := strings.NewReader(input)
