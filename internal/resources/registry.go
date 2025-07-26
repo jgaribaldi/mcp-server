@@ -13,15 +13,13 @@ import (
 )
 
 type DefaultResourceRegistry struct {
+	*registry.BaseLifecycleManager
 	factories        map[string]ResourceFactory
 	circuitFactories map[string]*registry.CircuitBreakerFactory[mcp.Resource]
 	resources        map[string]mcp.Resource
 	resourceInfo     map[string]ResourceInfo
 	cache           map[string]CachedContent
-	logger          *logger.Logger
-	config          *config.Config
 	validator       *ResourceValidator
-	running         bool
 	startTime       time.Time
 	lastCheck       time.Time
 	cacheHits       int64
@@ -32,20 +30,19 @@ type DefaultResourceRegistry struct {
 
 func NewDefaultResourceRegistry(cfg *config.Config, log *logger.Logger) ResourceRegistry {
 	return &DefaultResourceRegistry{
-		factories:        make(map[string]ResourceFactory),
-		circuitFactories: make(map[string]*registry.CircuitBreakerFactory[mcp.Resource]),
-		resources:        make(map[string]mcp.Resource),
-		resourceInfo:     make(map[string]ResourceInfo),
-		cache:           make(map[string]CachedContent),
-		logger:          log,
-		config:          cfg,
-		validator:       NewResourceValidator(cfg, log),
+		BaseLifecycleManager: registry.NewBaseLifecycleManager(cfg, log),
+		factories:            make(map[string]ResourceFactory),
+		circuitFactories:     make(map[string]*registry.CircuitBreakerFactory[mcp.Resource]),
+		resources:            make(map[string]mcp.Resource),
+		resourceInfo:         make(map[string]ResourceInfo),
+		cache:               make(map[string]CachedContent),
+		validator:           NewResourceValidator(cfg, log),
 	}
 }
 
 func (r *DefaultResourceRegistry) validateRegistrationRequest(uri string, factory ResourceFactory) error {
 	if err := r.validator.ValidateURI(uri); err != nil {
-		r.logger.Error("resource URI validation failed",
+		r.GetLogger().Error("resource URI validation failed",
 			"uri", uri,
 			"error", err,
 		)
@@ -53,14 +50,14 @@ func (r *DefaultResourceRegistry) validateRegistrationRequest(uri string, factor
 	}
 
 	if _, exists := r.factories[uri]; exists {
-		r.logger.Error("resource already registered",
+		r.GetLogger().Error("resource already registered",
 			"uri", uri,
 		)
 		return fmt.Errorf("%w: %s", ErrResourceAlreadyExists, uri)
 	}
 
 	if err := r.validator.ValidateFactory(factory); err != nil {
-		r.logger.Error("resource factory validation failed",
+		r.GetLogger().Error("resource factory validation failed",
 			"uri", uri,
 			"error", err,
 		)
@@ -97,7 +94,7 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.logger.Info("registering resource factory",
+	r.GetLogger().Info("registering resource factory",
 		"uri", uri,
 		"name", factory.Name(),
 		"description", factory.Description(),
@@ -111,7 +108,7 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 	circuitFactory := r.createCircuitBreakerFactory(uri)
 	r.storeFactoryInfo(uri, factory, circuitFactory)
 
-	r.logger.Info("resource factory registered successfully",
+	r.GetLogger().Info("resource factory registered successfully",
 		"uri", uri,
 		"capabilities", factory.Capabilities(),
 	)
@@ -123,10 +120,10 @@ func (r *DefaultResourceRegistry) Unregister(uri string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.logger.Info("unregistering resource", "uri", uri)
+	r.GetLogger().Info("unregistering resource", "uri", uri)
 
 	if _, exists := r.factories[uri]; !exists {
-		r.logger.Warn("attempted to unregister non-existent resource", "uri", uri)
+		r.GetLogger().Warn("attempted to unregister non-existent resource", "uri", uri)
 		return fmt.Errorf("%w: %s", ErrResourceNotFound, uri)
 	}
 
@@ -139,7 +136,7 @@ func (r *DefaultResourceRegistry) Unregister(uri string) error {
 	delete(r.cache, uri)
 	r.cacheMu.Unlock()
 
-	r.logger.Info("resource unregistered successfully", "uri", uri)
+	r.GetLogger().Info("resource unregistered successfully", "uri", uri)
 	return nil
 }
 
@@ -163,7 +160,7 @@ func (r *DefaultResourceRegistry) createResourceInstance(ctx context.Context, fa
 
 func (r *DefaultResourceRegistry) validateAndStoreResource(uri string, resource mcp.Resource) error {
 	if err := r.validator.ValidateResource(resource); err != nil {
-		r.logger.Error("created resource validation failed",
+		r.GetLogger().Error("created resource validation failed",
 			"uri", uri,
 			"error", err,
 		)
@@ -214,7 +211,7 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 		return r.createResourceInstance(ctx, factory)
 	})
 	if err != nil {
-		r.logger.Error("resource creation failed",
+		r.GetLogger().Error("resource creation failed",
 			"uri", uri,
 			"error", err,
 		)
@@ -225,7 +222,7 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 		return nil, err
 	}
 
-	r.logger.Info("resource instance created and cached",
+	r.GetLogger().Info("resource instance created and cached",
 		"uri", uri,
 	)
 
@@ -269,12 +266,12 @@ func (r *DefaultResourceRegistry) loadSingleResource(ctx context.Context, uri st
 	}
 
 	r.validateAndStoreBulkResource(uri, resource)
-	r.logger.Debug("resource loaded successfully", "uri", uri)
+	r.GetLogger().Debug("resource loaded successfully", "uri", uri)
 	return nil
 }
 
 func (r *DefaultResourceRegistry) handleResourceLoadError(uri string, errorMsg string, err error) {
-	r.logger.Error("resource creation failed during load",
+	r.GetLogger().Error("resource creation failed during load",
 		"uri", uri,
 		"error", err,
 	)
@@ -307,7 +304,7 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 	}
 	r.mu.RUnlock()
 
-	r.logger.Info("loading resources",
+	r.GetLogger().Info("loading resources",
 		"count", len(factories),
 	)
 
@@ -322,7 +319,7 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 		}
 	}
 
-	r.logger.Info("resource loading completed",
+	r.GetLogger().Info("resource loading completed",
 		"total", len(factories),
 		"loaded", loaded,
 		"errors", len(errors),
@@ -337,7 +334,7 @@ func (r *DefaultResourceRegistry) LoadResources(ctx context.Context) error {
 
 func (r *DefaultResourceRegistry) validateSingleResource(uri string, resource mcp.Resource) error {
 	if err := r.validator.ValidateResource(resource); err != nil {
-		r.logger.Error("resource validation failed",
+		r.GetLogger().Error("resource validation failed",
 			"uri", uri,
 			"error", err,
 		)
@@ -374,7 +371,7 @@ func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 	}
 	r.mu.RUnlock()
 
-	r.logger.Info("validating resources",
+	r.GetLogger().Info("validating resources",
 		"count", len(resources),
 	)
 
@@ -386,7 +383,7 @@ func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 		}
 	}
 
-	r.logger.Info("resource validation completed",
+	r.GetLogger().Info("resource validation completed",
 		"total", len(resources),
 		"errors", len(errors),
 	)
@@ -400,7 +397,7 @@ func (r *DefaultResourceRegistry) ValidateResources(ctx context.Context) error {
 
 func (r *DefaultResourceRegistry) validateStatusTransition(uri string, currentStatus, newStatus ResourceStatus) error {
 	if !IsValidTransition(currentStatus, newStatus) {
-		r.logger.Error("invalid status transition attempted",
+		r.GetLogger().Error("invalid status transition attempted",
 			"uri", uri,
 			"current_status", string(currentStatus),
 			"new_status", string(newStatus),
@@ -409,8 +406,8 @@ func (r *DefaultResourceRegistry) validateStatusTransition(uri string, currentSt
 			ErrInvalidTransition, string(currentStatus), string(newStatus))
 	}
 
-	if !r.running && (newStatus == ResourceStatusActive || newStatus == ResourceStatusLoaded) {
-		r.logger.Error("cannot activate resource when registry is not running",
+	if !r.IsRunning() && (newStatus == ResourceStatusActive || newStatus == ResourceStatusLoaded) {
+		r.GetLogger().Error("cannot activate resource when registry is not running",
 			"uri", uri,
 			"new_status", string(newStatus),
 		)
@@ -433,7 +430,7 @@ func (r *DefaultResourceRegistry) handleStatusTransitionCleanup(uri string, newS
 	case ResourceStatusDisabled:
 		if _, exists := r.resources[uri]; exists {
 			delete(r.resources, uri)
-			r.logger.Debug("removed resource instance for disabled resource", "uri", uri)
+			r.GetLogger().Debug("removed resource instance for disabled resource", "uri", uri)
 		}
 		r.cacheMu.Lock()
 		delete(r.cache, uri)
@@ -441,7 +438,7 @@ func (r *DefaultResourceRegistry) handleStatusTransitionCleanup(uri string, newS
 	case ResourceStatusError:
 		if _, exists := r.resources[uri]; exists {
 			delete(r.resources, uri)
-			r.logger.Debug("removed resource instance for error resource", "uri", uri)
+			r.GetLogger().Debug("removed resource instance for error resource", "uri", uri)
 		}
 		r.cacheMu.Lock()
 		delete(r.cache, uri)
@@ -453,14 +450,14 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.logger.Info("transitioning resource status",
+	r.GetLogger().Info("transitioning resource status",
 		"uri", uri,
 		"new_status", string(newStatus),
 	)
 
 	info, exists := r.resourceInfo[uri]
 	if !exists {
-		r.logger.Error("attempted to transition status of non-existent resource",
+		r.GetLogger().Error("attempted to transition status of non-existent resource",
 			"uri", uri,
 			"new_status", string(newStatus),
 		)
@@ -476,7 +473,7 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 	r.updateResourceStatus(uri, newStatus)
 	r.handleStatusTransitionCleanup(uri, newStatus)
 
-	r.logger.Info("resource status transition completed successfully",
+	r.GetLogger().Info("resource status transition completed successfully",
 		"uri", uri,
 		"previous_status", string(currentStatus),
 		"new_status", string(newStatus),
@@ -487,7 +484,7 @@ func (r *DefaultResourceRegistry) TransitionStatus(uri string, newStatus Resourc
 
 func (r *DefaultResourceRegistry) validateRefreshRequest(uri string, info ResourceInfo) error {
 	if info.Status != ResourceStatusActive && info.Status != ResourceStatusLoaded {
-		r.logger.Error("resource refresh not allowed from current status",
+		r.GetLogger().Error("resource refresh not allowed from current status",
 			"uri", uri, "current_status", string(info.Status))
 		return fmt.Errorf("%w: cannot refresh resource from status %s", 
 			ErrRefreshNotAllowed, string(info.Status))
@@ -498,13 +495,13 @@ func (r *DefaultResourceRegistry) validateRefreshRequest(uri string, info Resour
 func (r *DefaultResourceRegistry) recreateResourceInstance(ctx context.Context, uri string, factory ResourceFactory) (mcp.Resource, error) {
 	resource, err := r.createResourceInstance(ctx, factory)
 	if err != nil {
-		r.logger.Error("resource recreation failed during refresh", "uri", uri, "error", err)
+		r.GetLogger().Error("resource recreation failed during refresh", "uri", uri, "error", err)
 		r.TransitionStatus(uri, ResourceStatusError)
 		return nil, fmt.Errorf("%w: failed to recreate resource %s: %v", ErrResourceRefresh, uri, err)
 	}
 
 	if err := r.validator.ValidateResource(resource); err != nil {
-		r.logger.Error("resource validation failed during refresh", "uri", uri, "error", err)
+		r.GetLogger().Error("resource validation failed during refresh", "uri", uri, "error", err)
 		r.TransitionStatus(uri, ResourceStatusError)
 		return nil, fmt.Errorf("%w: resource validation failed for %s: %v", ErrResourceRefresh, uri, err)
 	}
@@ -537,7 +534,7 @@ func (r *DefaultResourceRegistry) RefreshResource(ctx context.Context, uri strin
 	}
 	r.mu.RUnlock()
 
-	r.logger.Info("refreshing resource", "uri", uri)
+	r.GetLogger().Info("refreshing resource", "uri", uri)
 
 	if err := r.validateRefreshRequest(uri, info); err != nil {
 		return err
@@ -550,7 +547,7 @@ func (r *DefaultResourceRegistry) RefreshResource(ctx context.Context, uri strin
 
 	r.updateResourceAndCache(uri, resource)
 
-	r.logger.Info("resource refresh completed successfully", "uri", uri)
+	r.GetLogger().Info("resource refresh completed successfully", "uri", uri)
 	return nil
 }
 
@@ -558,17 +555,20 @@ func (r *DefaultResourceRegistry) Start(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.running {
+	if r.IsRunning() {
 		return fmt.Errorf("registry is already running")
 	}
 
-	r.logger.Info("starting resource registry")
+	r.GetLogger().Info("starting resource registry")
 
-	r.running = true
+	if err := r.BaseLifecycleManager.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start base lifecycle manager: %w", err)
+	}
+
 	r.startTime = time.Now()
 	r.lastCheck = time.Now()
 
-	r.logger.Info("resource registry started successfully")
+	r.GetLogger().Info("resource registry started successfully")
 	return nil
 }
 
@@ -576,11 +576,11 @@ func (r *DefaultResourceRegistry) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !r.running {
+	if !r.IsRunning() {
 		return nil
 	}
 
-	r.logger.Info("stopping resource registry")
+	r.GetLogger().Info("stopping resource registry")
 
 	r.resources = make(map[string]mcp.Resource)
 	r.cacheMu.Lock()
@@ -594,9 +594,11 @@ func (r *DefaultResourceRegistry) Stop(ctx context.Context) error {
 		}
 	}
 
-	r.running = false
+	if err := r.BaseLifecycleManager.Stop(ctx); err != nil {
+		return fmt.Errorf("failed to stop base lifecycle manager: %w", err)
+	}
 
-	r.logger.Info("resource registry stopped")
+	r.GetLogger().Info("resource registry stopped")
 	return nil
 }
 
@@ -641,7 +643,7 @@ func (r *DefaultResourceRegistry) Health() RegistryHealth {
 		health.CircuitBreakers[uri] = cb.Status()
 	}
 
-	if !r.running {
+	if !r.IsRunning() {
 		health.Status = "stopped"
 	} else if health.ErrorResources > 0 {
 		health.Status = "degraded"
