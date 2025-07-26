@@ -9,11 +9,12 @@ import (
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/registry"
 )
 
 type DefaultResourceRegistry struct {
 	factories        map[string]ResourceFactory
-	circuitFactories map[string]*CircuitBreakerResourceFactory
+	circuitFactories map[string]*registry.CircuitBreakerFactory[mcp.Resource]
 	resources        map[string]mcp.Resource
 	resourceInfo     map[string]ResourceInfo
 	cache           map[string]CachedContent
@@ -32,7 +33,7 @@ type DefaultResourceRegistry struct {
 func NewDefaultResourceRegistry(cfg *config.Config, log *logger.Logger) ResourceRegistry {
 	return &DefaultResourceRegistry{
 		factories:        make(map[string]ResourceFactory),
-		circuitFactories: make(map[string]*CircuitBreakerResourceFactory),
+		circuitFactories: make(map[string]*registry.CircuitBreakerFactory[mcp.Resource]),
 		resources:        make(map[string]mcp.Resource),
 		resourceInfo:     make(map[string]ResourceInfo),
 		cache:           make(map[string]CachedContent),
@@ -69,12 +70,12 @@ func (r *DefaultResourceRegistry) validateRegistrationRequest(uri string, factor
 	return nil
 }
 
-func (r *DefaultResourceRegistry) createCircuitBreakerFactory(factory ResourceFactory) *CircuitBreakerResourceFactory {
-	circuitConfig := DefaultCircuitBreakerConfig()
-	return NewCircuitBreakerResourceFactory(factory, circuitConfig)
+func (r *DefaultResourceRegistry) createCircuitBreakerFactory(uri string) *registry.CircuitBreakerFactory[mcp.Resource] {
+	circuitConfig := registry.DefaultCircuitBreakerConfig()
+	return registry.NewCircuitBreakerFactory[mcp.Resource](uri, circuitConfig)
 }
 
-func (r *DefaultResourceRegistry) storeFactoryInfo(uri string, factory ResourceFactory, circuitFactory *CircuitBreakerResourceFactory) {
+func (r *DefaultResourceRegistry) storeFactoryInfo(uri string, factory ResourceFactory, circuitFactory *registry.CircuitBreakerFactory[mcp.Resource]) {
 	r.factories[uri] = factory
 	r.circuitFactories[uri] = circuitFactory
 
@@ -107,7 +108,7 @@ func (r *DefaultResourceRegistry) Register(uri string, factory ResourceFactory) 
 		return err
 	}
 
-	circuitFactory := r.createCircuitBreakerFactory(factory)
+	circuitFactory := r.createCircuitBreakerFactory(uri)
 	r.storeFactoryInfo(uri, factory, circuitFactory)
 
 	r.logger.Info("resource factory registered successfully",
@@ -197,12 +198,21 @@ func (r *DefaultResourceRegistry) Get(uri string) (mcp.Resource, error) {
 		return nil, fmt.Errorf("%w: %s", ErrResourceNotFound, uri)
 	}
 
+	circuitFactory, circuitExists := r.circuitFactories[uri]
+	if !circuitExists {
+		r.mu.RUnlock()
+		return nil, fmt.Errorf("%w: circuit breaker not found for %s", ErrResourceNotFound, uri)
+	}
+
 	r.mu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	resource, err := r.createResourceInstance(ctx, factory)
+	// Use circuit breaker to protect resource creation
+	resource, err := circuitFactory.ExecuteWithContext(ctx, func(ctx context.Context) (mcp.Resource, error) {
+		return r.createResourceInstance(ctx, factory)
+	})
 	if err != nil {
 		r.logger.Error("resource creation failed",
 			"uri", uri,
