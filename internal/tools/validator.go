@@ -137,6 +137,13 @@ func (v *ToolValidator) ValidateTool(tool mcp.Tool) error {
 		errors.Add("handler", "", "tool handler cannot be nil")
 	}
 
+	// Validate tool parameters (input schema)
+	if params := tool.Parameters(); params != nil {
+		if err := v.ValidateJSONInput(params); err != nil {
+			errors.Add("parameters", string(params), fmt.Sprintf("invalid input schema: %v", err))
+		}
+	}
+
 	if errors.HasErrors() {
 		return errors
 	}
@@ -256,12 +263,25 @@ func (v *ToolValidator) ValidateConfig(config ToolConfig) error {
 	}
 
 	if config.Config != nil {
+		if len(config.Config) > 50 {
+			errors.Add("config", fmt.Sprintf("%d items", len(config.Config)), "too many configuration items (max: 50)")
+		}
+		
 		for key, value := range config.Config {
 			if key == "" {
 				errors.Add("config", key, "configuration key cannot be empty")
 			}
+			
+			if len(key) > 64 {
+				errors.Add("config", key, fmt.Sprintf("configuration key too long: %d characters (max: 64)", len(key)))
+			}
+			
 			if value == nil {
 				errors.Add("config", key, "configuration value cannot be nil")
+			}
+			
+			if strValue, ok := value.(string); ok && len(strValue) > 1024 {
+				errors.Add("config", key, fmt.Sprintf("configuration value too long: %d characters (max: 1024)", len(strValue)))
 			}
 		}
 	}
