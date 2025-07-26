@@ -144,6 +144,98 @@ func (v *ToolValidator) ValidateTool(tool mcp.Tool) error {
 	return nil
 }
 
+func (v *ToolValidator) validateJSONSchema(schema map[string]interface{}) error {
+	if len(schema) == 0 {
+		return nil
+	}
+	
+	if err := v.validateSchemaType(schema); err != nil {
+		return err
+	}
+	if err := v.validateSchemaProperties(schema); err != nil {
+		return err
+	}
+	if err := v.validateSchemaRequired(schema); err != nil {
+		return err
+	}
+	if err := v.validateSchemaItems(schema); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+func (v *ToolValidator) validateSchemaType(schema map[string]interface{}) error {
+	schemaType, exists := schema["type"]
+	if !exists {
+		return nil
+	}
+	
+	typeStr, ok := schemaType.(string)
+	if !ok {
+		return fmt.Errorf("schema type must be a string")
+	}
+	
+	validTypes := map[string]bool{
+		"object":  true,
+		"array":   true,
+		"string":  true,
+		"number":  true,
+		"boolean": true,
+	}
+	if !validTypes[typeStr] {
+		return fmt.Errorf("invalid schema type: %s", typeStr)
+	}
+	
+	return nil
+}
+
+func (v *ToolValidator) validateSchemaProperties(schema map[string]interface{}) error {
+	properties, exists := schema["properties"]
+	if !exists {
+		return nil
+	}
+	
+	if _, ok := properties.(map[string]interface{}); !ok {
+		return fmt.Errorf("properties must be an object")
+	}
+	
+	return nil
+}
+
+func (v *ToolValidator) validateSchemaRequired(schema map[string]interface{}) error {
+	required, exists := schema["required"]
+	if !exists {
+		return nil
+	}
+	
+	reqSlice, ok := required.([]interface{})
+	if !ok {
+		return fmt.Errorf("required must be an array")
+	}
+	
+	for _, req := range reqSlice {
+		if _, ok := req.(string); !ok {
+			return fmt.Errorf("required array must contain only strings")
+		}
+	}
+	
+	return nil
+}
+
+func (v *ToolValidator) validateSchemaItems(schema map[string]interface{}) error {
+	items, exists := schema["items"]
+	if !exists {
+		return nil
+	}
+	
+	if _, ok := items.(map[string]interface{}); !ok {
+		return fmt.Errorf("items must be an object")
+	}
+	
+	return nil
+}
+
 func (v *ToolValidator) ValidateConfig(config ToolConfig) error {
 	var errors ToolValidationErrors
 
@@ -182,21 +274,12 @@ func (v *ToolValidator) ValidateConfig(config ToolConfig) error {
 }
 
 func (v *ToolValidator) ValidateJSONInput(input []byte) error {
-	var errors ToolValidationErrors
-
-	if len(input) == 0 {
-		errors.Add("input", "", "input cannot be empty")
-		return errors
+	var schema map[string]interface{}
+	
+	// First validate that it's valid JSON
+	if err := json.Unmarshal(input, &schema); err != nil {
+		return fmt.Errorf("invalid JSON: %v", err)
 	}
-
-	var data interface{}
-	if err := json.Unmarshal(input, &data); err != nil {
-		errors.Add("input", string(input), "invalid JSON format")
-	}
-
-	if errors.HasErrors() {
-		return errors
-	}
-
-	return nil
+	
+	return v.validateJSONSchema(schema)
 }
