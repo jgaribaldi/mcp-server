@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
@@ -22,6 +23,13 @@ func NewToolValidator(cfg *config.Config, log *logger.Logger) *ToolValidator {
 
 var (
 	toolNameRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,63}$`)
+	reservedNames = map[string]bool{
+		"system":   true,
+		"internal": true,
+		"admin":    true,
+		"root":     true,
+		"api":      true,
+	}
 )
 
 func (v *ToolValidator) ValidateName(name string) error {
@@ -34,6 +42,11 @@ func (v *ToolValidator) ValidateName(name string) error {
 
 	v.ValidateStringLength(name, "name", 64, &errors)
 	v.ValidateStringPattern(name, "name", toolNameRegex, "must start with a letter and contain only alphanumeric characters and underscores", &errors)
+	
+	// Check for reserved names (case-insensitive)
+	if reservedNames[strings.ToLower(name)] {
+		errors.Add("name", name, "name is reserved and cannot be used")
+	}
 
 	if errors.HasErrors() {
 		return errors
