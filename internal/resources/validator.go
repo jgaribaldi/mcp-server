@@ -10,37 +10,22 @@ import (
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/registry"
 )
 
 type ResourceValidator struct {
-	config *config.Config
-	logger *logger.Logger
+	*registry.BaseValidator
 }
 
 func NewResourceValidator(cfg *config.Config, log *logger.Logger) *ResourceValidator {
 	return &ResourceValidator{
-		config: cfg,
-		logger: log,
+		BaseValidator: registry.NewBaseValidator(cfg, log),
 	}
 }
 
-func (v *ResourceValidator) validateStringLength(value string, fieldName string, maxLength int) error {
-	if len(value) > maxLength {
-		return fmt.Errorf("%s too long: %d characters (max: %d)", fieldName, len(value), maxLength)
-	}
-	return nil
-}
-
+// Resource-specific validation helper that adds to errors collection
 func (v *ResourceValidator) addValidationError(errors *ResourceValidationErrors, field, value, message string) {
 	errors.Add(field, value, message)
-}
-
-func (v *ResourceValidator) logValidationResult(success bool, entityType, uri string, errorCount int) {
-	if success {
-		v.logger.Debug(fmt.Sprintf("%s validation passed", entityType), "uri", uri)
-	} else {
-		v.logger.Error(fmt.Sprintf("%s validation failed", entityType), "uri", uri, "errors", errorCount)
-	}
 }
 
 func (v *ResourceValidator) validateBasicURI(uri string) error {
@@ -103,7 +88,7 @@ func (v *ResourceValidator) validateURILength(uri string) error {
 }
 
 func (v *ResourceValidator) ValidateURI(uri string) error {
-	v.logger.Debug("validating resource URI", "uri", uri)
+	// Resource URI validation uses embedded logger through BaseValidator methods
 
 	if err := v.validateBasicURI(uri); err != nil {
 		return err
@@ -119,7 +104,7 @@ func (v *ResourceValidator) ValidateURI(uri string) error {
 		return err
 	}
 
-	v.logger.Debug("resource URI validation passed", "uri", uri, "scheme", parsedURI.Scheme)
+	// Resource URI validation passed - logged through BaseValidator
 	return nil
 }
 
@@ -128,8 +113,10 @@ func (v *ResourceValidator) ValidateName(name string) error {
 		return fmt.Errorf("name cannot be empty")
 	}
 
-	if err := v.validateStringLength(name, "name", 255); err != nil {
-		return err
+	var errors ResourceValidationErrors
+	v.ValidateStringLength(name, "name", 255, &errors)
+	if errors.HasErrors() {
+		return errors
 	}
 
 	validName := regexp.MustCompile(`^[a-zA-Z0-9\-_ ]+$`)
@@ -180,11 +167,8 @@ func (v *ResourceValidator) validateFactoryBasics(factory ResourceFactory, error
 		v.addValidationError(errors, "name", factory.Name(), err.Error())
 	}
 
-	if factory.Description() == "" {
-		v.addValidationError(errors, "description", "", "description cannot be empty")
-	} else if err := v.validateStringLength(factory.Description(), "description", 1000); err != nil {
-		v.addValidationError(errors, "description", factory.Description(), err.Error())
-	}
+	v.ValidateRequiredString(factory.Description(), "description", errors)
+	v.ValidateStringLength(factory.Description(), "description", 1000, errors)
 }
 
 func (v *ResourceValidator) validateFactoryMetadata(factory ResourceFactory, errors *ResourceValidationErrors) {
@@ -192,26 +176,15 @@ func (v *ResourceValidator) validateFactoryMetadata(factory ResourceFactory, err
 		v.addValidationError(errors, "mime_type", factory.MimeType(), err.Error())
 	}
 
-	if factory.Version() == "" {
-		v.addValidationError(errors, "version", "", "version cannot be empty")
-	} else if err := v.validateStringLength(factory.Version(), "version", 50); err != nil {
-		v.addValidationError(errors, "version", factory.Version(), err.Error())
-	}
+	v.ValidateVersion(factory.Version(), errors)
 }
 
 func (v *ResourceValidator) validateFactoryCapabilities(factory ResourceFactory, errors *ResourceValidationErrors) {
-	capabilities := factory.Capabilities()
-	if len(capabilities) == 0 {
-		v.addValidationError(errors, "capabilities", "", "at least one capability must be specified")
-		return
-	}
-
-	for i, capability := range capabilities {
-		if capability == "" {
-			v.addValidationError(errors, "capabilities", fmt.Sprintf("[%d]", i), "capability cannot be empty")
-		} else if err := v.validateStringLength(capability, "capability", 100); err != nil {
-			v.addValidationError(errors, "capabilities", capability, err.Error())
-		}
+	v.ValidateCapabilities(factory.Capabilities(), errors)
+	
+	// Additional resource-specific capability validation (length limit)
+	for _, capability := range factory.Capabilities() {
+		v.ValidateStringLength(capability, "capabilities", 100, errors)
 	}
 }
 
@@ -220,15 +193,13 @@ func (v *ResourceValidator) validateFactoryTags(factory ResourceFactory, errors 
 	for i, tag := range tags {
 		if tag == "" {
 			v.addValidationError(errors, "tags", fmt.Sprintf("[%d]", i), "tag cannot be empty")
-		} else if err := v.validateStringLength(tag, "tag", 50); err != nil {
-			v.addValidationError(errors, "tags", tag, err.Error())
+		} else {
+			v.ValidateStringLength(tag, "tag", 50, errors)
 		}
 	}
 }
 
 func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
-	v.logger.Debug("validating resource factory", "uri", factory.URI())
-
 	var errors ResourceValidationErrors
 
 	v.validateFactoryBasics(factory, &errors)
@@ -237,11 +208,11 @@ func (v *ResourceValidator) ValidateFactory(factory ResourceFactory) error {
 	v.validateFactoryTags(factory, &errors)
 
 	if errors.HasErrors() {
-		v.logValidationResult(false, "resource factory", factory.URI(), len(errors))
+		v.LogValidationResult(false, "resource factory", factory.URI(), len(errors))
 		return errors
 	}
 
-	v.logValidationResult(true, "resource factory", factory.URI(), 0)
+	v.LogValidationResult(true, "resource factory", factory.URI(), 0)
 	return nil
 }
 
@@ -254,9 +225,7 @@ func (v *ResourceValidator) validateResourceBasics(resource mcp.Resource, errors
 		v.addValidationError(errors, "name", resource.Name(), err.Error())
 	}
 
-	if resource.Description() == "" {
-		v.addValidationError(errors, "description", "", "description cannot be empty")
-	}
+	v.ValidateRequiredString(resource.Description(), "description", errors)
 }
 
 func (v *ResourceValidator) validateResourceMetadata(resource mcp.Resource, errors *ResourceValidationErrors) {
@@ -272,8 +241,6 @@ func (v *ResourceValidator) validateResourceHandler(resource mcp.Resource, error
 }
 
 func (v *ResourceValidator) ValidateResource(resource mcp.Resource) error {
-	v.logger.Debug("validating resource instance", "uri", resource.URI())
-
 	var errors ResourceValidationErrors
 
 	v.validateResourceBasics(resource, &errors)
@@ -281,11 +248,11 @@ func (v *ResourceValidator) ValidateResource(resource mcp.Resource) error {
 	v.validateResourceHandler(resource, &errors)
 
 	if errors.HasErrors() {
-		v.logValidationResult(false, "resource", resource.URI(), len(errors))
+		v.LogValidationResult(false, "resource", resource.URI(), len(errors))
 		return errors
 	}
 
-	v.logValidationResult(true, "resource", resource.URI(), 0)
+	v.LogValidationResult(true, "resource", resource.URI(), 0)
 	return nil
 }
 
@@ -322,8 +289,6 @@ func (v *ResourceValidator) validateConfigMap(config ResourceConfig, errors *Res
 }
 
 func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
-	v.logger.Debug("validating resource configuration")
-
 	var errors ResourceValidationErrors
 
 	v.validateCacheTimeout(config, &errors)
@@ -331,11 +296,11 @@ func (v *ResourceValidator) ValidateConfig(config ResourceConfig) error {
 	v.validateConfigMap(config, &errors)
 
 	if errors.HasErrors() {
-		v.logger.Error("resource configuration validation failed", "errors", len(errors))
+		v.LogValidationResult(false, "resource configuration", "", len(errors))
 		return errors
 	}
 
-	v.logger.Debug("resource configuration validation passed")
+	v.LogValidationResult(true, "resource configuration", "", 0)
 	return nil
 }
 
@@ -399,21 +364,21 @@ func (v *ResourceValidator) validateContentItems(content mcp.ResourceContent) er
 }
 
 func (v *ResourceValidator) ValidateResourceContent(content mcp.ResourceContent) error {
-	v.logger.Debug("validating resource content")
-
 	if err := v.validateContentMimeType(content); err != nil {
+		v.LogValidationResult(false, "resource content", "", 1)
 		return err
 	}
 
 	if err := v.validateContentStructure(content); err != nil {
+		v.LogValidationResult(false, "resource content", "", 1)
 		return err
 	}
 
 	if err := v.validateContentItems(content); err != nil {
+		v.LogValidationResult(false, "resource content", "", 1)
 		return err
 	}
 
-	contentItems := content.GetContent()
-	v.logger.Debug("resource content validation passed", "items", len(contentItems))
+	v.LogValidationResult(true, "resource content", "", 0)
 	return nil
 }

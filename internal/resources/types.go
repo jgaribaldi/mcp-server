@@ -107,40 +107,10 @@ var (
 	ErrRefreshNotAllowed     = fmt.Errorf("resource refresh not allowed")
 )
 
-type ResourceValidationError struct {
-	Field   string `json:"field"`
-	Value   string `json:"value"`
-	Message string `json:"message"`
-}
-
-func (e ResourceValidationError) Error() string {
-	return fmt.Sprintf("validation error in field '%s' (value: '%s'): %s", e.Field, e.Value, e.Message)
-}
+// Use shared validation error types from registry package
+type ResourceValidationError = registry.ValidationError
+type ResourceValidationErrors = registry.ValidationErrors
 
 // Use shared transition logic from registry package
 var IsValidTransition = registry.IsValidTransition
 var GetAllowedTransitions = registry.GetAllowedTransitions
-
-type ResourceValidationErrors []ResourceValidationError
-
-func (e ResourceValidationErrors) Error() string {
-	if len(e) == 0 {
-		return ""
-	}
-	if len(e) == 1 {
-		return e[0].Error()
-	}
-	return fmt.Sprintf("%d validation errors: %s (and %d more)", len(e), e[0].Error(), len(e)-1)
-}
-
-func (e *ResourceValidationErrors) Add(field, value, message string) {
-	*e = append(*e, ResourceValidationError{
-		Field:   field,
-		Value:   value,
-		Message: message,
-	})
-}
-
-func (e ResourceValidationErrors) HasErrors() bool {
-	return len(e) > 0
-}
