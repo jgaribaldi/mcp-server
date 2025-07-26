@@ -6,17 +6,18 @@ import (
 	"time"
 
 	"mcp-server/internal/mcp"
+	"mcp-server/internal/registry"
 )
 
-type ResourceStatus string
+type ResourceStatus = registry.LifecycleStatus
 
 const (
-	ResourceStatusUnknown    ResourceStatus = "unknown"
-	ResourceStatusRegistered ResourceStatus = "registered"
-	ResourceStatusLoaded     ResourceStatus = "loaded"
-	ResourceStatusActive     ResourceStatus = "active"
-	ResourceStatusError      ResourceStatus = "error"
-	ResourceStatusDisabled   ResourceStatus = "disabled"
+	ResourceStatusUnknown    = registry.StatusUnknown
+	ResourceStatusRegistered = registry.StatusRegistered
+	ResourceStatusLoaded     = registry.StatusLoaded
+	ResourceStatusActive     = registry.StatusActive
+	ResourceStatusError      = registry.StatusError
+	ResourceStatusDisabled   = registry.StatusDisabled
 )
 
 type ResourceInfo struct {
@@ -116,56 +117,9 @@ func (e ResourceValidationError) Error() string {
 	return fmt.Sprintf("validation error in field '%s' (value: '%s'): %s", e.Field, e.Value, e.Message)
 }
 
-type StatusTransition struct {
-	From ResourceStatus
-	To   ResourceStatus
-}
-
-var ValidStatusTransitions = map[StatusTransition]bool{
-	// From registered
-	{ResourceStatusRegistered, ResourceStatusLoaded}:   true,
-	{ResourceStatusRegistered, ResourceStatusError}:    true,
-	{ResourceStatusRegistered, ResourceStatusDisabled}: true,
-	
-	// From loaded
-	{ResourceStatusLoaded, ResourceStatusActive}:   true,
-	{ResourceStatusLoaded, ResourceStatusError}:    true,
-	{ResourceStatusLoaded, ResourceStatusDisabled}: true,
-	
-	// From active
-	{ResourceStatusActive, ResourceStatusError}:    true,
-	{ResourceStatusActive, ResourceStatusDisabled}: true,
-	{ResourceStatusActive, ResourceStatusLoaded}:   true, // downgrade
-	
-	// From error
-	{ResourceStatusError, ResourceStatusRegistered}: true, // restart
-	{ResourceStatusError, ResourceStatusDisabled}:   true,
-	
-	// From disabled
-	{ResourceStatusDisabled, ResourceStatusRegistered}: true, // enable
-	{ResourceStatusDisabled, ResourceStatusError}:      true,
-}
-
-func IsValidTransition(from, to ResourceStatus) bool {
-	if from == to {
-		return true // same status is always valid
-	}
-	return ValidStatusTransitions[StatusTransition{From: from, To: to}]
-}
-
-func GetAllowedTransitions(from ResourceStatus) []ResourceStatus {
-	var allowed []ResourceStatus
-	
-	allowed = append(allowed, from)
-	
-	for transition := range ValidStatusTransitions {
-		if transition.From == from {
-			allowed = append(allowed, transition.To)
-		}
-	}
-	
-	return allowed
-}
+// Use shared transition logic from registry package
+var IsValidTransition = registry.IsValidTransition
+var GetAllowedTransitions = registry.GetAllowedTransitions
 
 type ResourceValidationErrors []ResourceValidationError
 
