@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -88,7 +89,15 @@ func (v *ToolValidator) ValidateFactory(factory ToolFactory) error {
 	}
 
 	v.ValidateVersion(factory.GetVersion(), &errors)
-	v.ValidateCapabilities(factory.GetCapabilities(), &errors)
+	
+	// Validate capability count limit
+	capabilities := factory.GetCapabilities()
+	if len(capabilities) > 20 {
+		errors.Add("capabilities", fmt.Sprintf("%d capabilities", len(capabilities)), 
+			"too many capabilities (max: 20)")
+	}
+	
+	v.ValidateCapabilities(capabilities, &errors)
 
 	config := ToolConfig{
 		Enabled: true,
