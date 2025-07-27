@@ -77,6 +77,18 @@ type ToolDetailResponse struct {
 	Requirements map[string]string      `json:"requirements"`
 }
 
+type ResourceDiscoveryResponse struct {
+	Resources []ResourceInfo `json:"resources"`
+}
+
+type ResourceInfo struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MimeType    string `json:"mime_type"`
+	Status      string `json:"status"`
+}
+
 type MetricsResponse struct {
 	Status           string            `json:"status"`
 	Timestamp        string            `json:"timestamp"`
@@ -182,6 +194,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/tools/", s.handleToolsRoute)
 	s.mux.HandleFunc("/tools", s.handleToolsDiscovery)
+	s.mux.HandleFunc("/resources", s.handleResourcesDiscovery)
 	s.mux.HandleFunc("/resources/health", s.handleResourcesHealth)
 }
 
@@ -380,6 +393,49 @@ func (s *Server) writeToolDetailSuccess(w http.ResponseWriter, toolName string, 
 
 	s.logger.Info("tool detail completed successfully",
 		"tool_name", toolName,
+	)
+}
+
+func (s *Server) handleResourcesDiscovery(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("resources discovery requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	resourceInfos := s.resourceRegistry.List()
+	resources := make([]ResourceInfo, len(resourceInfos))
+	
+	for i, resourceInfo := range resourceInfos {
+		resources[i] = ResourceInfo{
+			URI:         resourceInfo.URI,
+			Name:        resourceInfo.Name,
+			Description: resourceInfo.Description,
+			MimeType:    resourceInfo.MimeType,
+			Status:      string(resourceInfo.Status),
+		}
+	}
+
+	response := ResourceDiscoveryResponse{
+		Resources: resources,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal resources discovery response",
+			"error", err,
+		)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("resources discovery completed successfully",
+		"resource_count", len(resources),
 	)
 }
 
