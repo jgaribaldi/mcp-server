@@ -18,23 +18,20 @@ func (c *TextContent) GetBlob() []byte {
 }
 
 type BlobContent struct {
-	data []byte
+	Data []byte
 }
 
-func NewBlobContent(data []byte) Content {
-	return &BlobContent{data: data}
-}
 
 func (c *BlobContent) Type() string {
 	return "blob"
 }
 
 func (c *BlobContent) GetText() string {
-	return string(c.data)
+	return string(c.Data)
 }
 
 func (c *BlobContent) GetBlob() []byte {
-	return c.data
+	return c.Data
 }
 
 type toolResult struct {

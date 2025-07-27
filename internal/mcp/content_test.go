@@ -65,7 +65,7 @@ func TestTextContentSpecialChars(t *testing.T) {
 
 func TestBlobContent(t *testing.T) {
 	data := []byte{0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0xFF, 0x01} // "Hello" + binary data
-	content := NewBlobContent(data)
+	content := &BlobContent{Data: data}
 
 	if content.Type() != "blob" {
 		t.Errorf("Expected type 'blob', got '%s'", content.Type())
@@ -88,7 +88,7 @@ func TestBlobContent(t *testing.T) {
 }
 
 func TestBlobContentEmpty(t *testing.T) {
-	content := NewBlobContent([]byte{})
+	content := &BlobContent{Data: []byte{}}
 
 	if content.Type() != "blob" {
 		t.Errorf("Expected type 'blob', got '%s'", content.Type())
@@ -104,7 +104,7 @@ func TestBlobContentEmpty(t *testing.T) {
 }
 
 func TestBlobContentNil(t *testing.T) {
-	content := NewBlobContent(nil)
+	content := &BlobContent{Data: nil}
 
 	if content.Type() != "blob" {
 		t.Errorf("Expected type 'blob', got '%s'", content.Type())
@@ -122,7 +122,7 @@ func TestBlobContentNil(t *testing.T) {
 
 func TestToolResultSuccess(t *testing.T) {
 	textContent := &TextContent{Text: "Success message"}
-	blobContent := NewBlobContent([]byte("Binary data"))
+	blobContent := &BlobContent{Data: []byte("Binary data")}
 	
 	result := NewToolResult(textContent, blobContent)
 
@@ -199,7 +199,7 @@ func TestToolResultErrorNil(t *testing.T) {
 
 func TestResourceContent(t *testing.T) {
 	textContent := &TextContent{Text: "Resource text"}
-	blobContent := NewBlobContent([]byte("Resource binary"))
+	blobContent := &BlobContent{Data: []byte("Resource binary")}
 	mimeType := "application/json"
 
 	resourceContent := NewResourceContent(mimeType, textContent, blobContent)
@@ -265,7 +265,7 @@ func BenchmarkBlobContentCreation(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		NewBlobContent(data)
+		_ = &BlobContent{Data: data}
 	}
 }
 
