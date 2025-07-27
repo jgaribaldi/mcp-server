@@ -1,23 +1,20 @@
 package mcp
 
 type TextContent struct {
-	text string
+	Text string
 }
 
-func NewTextContent(text string) Content {
-	return &TextContent{text: text}
-}
 
 func (c *TextContent) Type() string {
 	return "text"
 }
 
 func (c *TextContent) GetText() string {
-	return c.text
+	return c.Text
 }
 
 func (c *TextContent) GetBlob() []byte {
-	return []byte(c.text)
+	return []byte(c.Text)
 }
 
 type BlobContent struct {

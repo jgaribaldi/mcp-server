@@ -7,7 +7,7 @@ import (
 
 func TestTextContent(t *testing.T) {
 	text := "Hello, MCP World!"
-	content := NewTextContent(text)
+	content := &TextContent{Text: text}
 
 	if content.Type() != "text" {
 		t.Errorf("Expected type 'text', got '%s'", content.Type())
@@ -34,7 +34,7 @@ func TestTextContent(t *testing.T) {
 }
 
 func TestTextContentEmpty(t *testing.T) {
-	content := NewTextContent("")
+	content := &TextContent{Text: ""}
 
 	if content.Type() != "text" {
 		t.Errorf("Expected type 'text', got '%s'", content.Type())
@@ -52,7 +52,7 @@ func TestTextContentEmpty(t *testing.T) {
 
 func TestTextContentSpecialChars(t *testing.T) {
 	text := "Hello 🌍\nMultiline\tWith\ttabs\r\nWindows line endings"
-	content := NewTextContent(text)
+	content := &TextContent{Text: text}
 
 	if content.GetText() != text {
 		t.Errorf("Expected text with special chars preserved, got '%s'", content.GetText())
@@ -121,7 +121,7 @@ func TestBlobContentNil(t *testing.T) {
 }
 
 func TestToolResultSuccess(t *testing.T) {
-	textContent := NewTextContent("Success message")
+	textContent := &TextContent{Text: "Success message"}
 	blobContent := NewBlobContent([]byte("Binary data"))
 	
 	result := NewToolResult(textContent, blobContent)
@@ -198,7 +198,7 @@ func TestToolResultErrorNil(t *testing.T) {
 }
 
 func TestResourceContent(t *testing.T) {
-	textContent := NewTextContent("Resource text")
+	textContent := &TextContent{Text: "Resource text"}
 	blobContent := NewBlobContent([]byte("Resource binary"))
 	mimeType := "application/json"
 
@@ -237,7 +237,7 @@ func TestResourceContentEmpty(t *testing.T) {
 }
 
 func TestResourceContentEmptyMimeType(t *testing.T) {
-	textContent := NewTextContent("Some content")
+	textContent := &TextContent{Text: "Some content"}
 	resourceContent := NewResourceContent("", textContent)
 
 	if resourceContent.GetMimeType() != "" {
@@ -254,7 +254,7 @@ func BenchmarkTextContentCreation(b *testing.B) {
 	text := "This is a test string for benchmarking"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		NewTextContent(text)
+		_ = &TextContent{Text: text}
 	}
 }
 
@@ -270,7 +270,7 @@ func BenchmarkBlobContentCreation(b *testing.B) {
 }
 
 func BenchmarkToolResultCreation(b *testing.B) {
-	content := NewTextContent("Benchmark content")
+	content := &TextContent{Text: "Benchmark content"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		NewToolResult(content)

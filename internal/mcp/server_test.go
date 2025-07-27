@@ -47,7 +47,7 @@ func (m *mockToolHandler) Handle(ctx context.Context, params json.RawMessage) (T
 	if m.handleFunc != nil {
 		return m.handleFunc(ctx, params)
 	}
-	return NewToolResult(NewTextContent("mock result")), nil
+	return NewToolResult(&TextContent{Text: "mock result"}), nil
 }
 
 type mockResource struct {
@@ -72,7 +72,7 @@ func (m *mockResourceHandler) Read(ctx context.Context, uri string) (ResourceCon
 	if m.readFunc != nil {
 		return m.readFunc(ctx, uri)
 	}
-	return NewResourceContent("text/plain", NewTextContent("mock resource content")), nil
+	return NewResourceContent("text/plain", &TextContent{Text: "mock resource content"}), nil
 }
 
 func TestNewServer(t *testing.T) {
@@ -314,7 +314,7 @@ func TestToolHandlerAdapter(t *testing.T) {
 	t.Run("SuccessfulExecution", func(t *testing.T) {
 		handler := &mockToolHandler{
 			handleFunc: func(ctx context.Context, params json.RawMessage) (ToolResult, error) {
-				return NewToolResult(NewTextContent("success result")), nil
+				return NewToolResult(&TextContent{Text: "success result"}), nil
 			},
 		}
 
