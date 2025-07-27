@@ -43,6 +43,24 @@ Register custom resources by implementing the `ResourceFactory` interface:
 
 Resources support caching, access control, and lifecycle management.
 
+### 4. Discovery Endpoints
+Query available tools and resources without access to source code:
+
+**GET /tools** - List all registered tools:
+```bash
+curl http://localhost:3000/tools
+```
+
+**GET /tools/{name}** - Get detailed tool information:
+```bash
+curl http://localhost:3000/tools/echo
+```
+
+**GET /resources** - List all registered resources:
+```bash
+curl http://localhost:3000/resources
+```
+
 ## Quick Start
 
 ### Prerequisites
