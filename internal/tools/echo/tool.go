@@ -85,15 +85,15 @@ func (h *EchoHandler) Handle(ctx context.Context, params json.RawMessage) (mcp.T
 	var echoParams EchoParams
 	
 	if err := json.Unmarshal(params, &echoParams); err != nil {
-		return mcp.NewToolError(fmt.Errorf("invalid parameters: %w", err)), nil
+		return &mcp.ToolResultImpl{Error: fmt.Errorf("invalid parameters: %w", err), IsErrorFlag: true}, nil
 	}
 	
 	if err := h.service.ValidateAll(echoParams.Message, echoParams.Prefix, echoParams.Suffix); err != nil {
-		return mcp.NewToolError(err), nil
+		return &mcp.ToolResultImpl{Error: err, IsErrorFlag: true}, nil
 	}
 	
 	result := h.service.Transform(echoParams.Message, echoParams.Prefix, echoParams.Suffix, echoParams.Uppercase)
 	
-	content := mcp.NewTextContent(result)
-	return mcp.NewToolResult(content), nil
+	content := &mcp.TextContent{Text: result}
+	return &mcp.ToolResultImpl{Content: []mcp.Content{content}, IsErrorFlag: false}, nil
 }

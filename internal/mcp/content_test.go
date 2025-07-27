@@ -124,7 +124,7 @@ func TestToolResultSuccess(t *testing.T) {
 	textContent := &TextContent{Text: "Success message"}
 	blobContent := &BlobContent{Data: []byte("Binary data")}
 	
-	result := NewToolResult(textContent, blobContent)
+	result := &ToolResultImpl{Content: []Content{textContent, blobContent}, IsErrorFlag: false}
 
 	if result.IsError() {
 		t.Error("Expected successful result, but IsError() returned true")
@@ -149,7 +149,7 @@ func TestToolResultSuccess(t *testing.T) {
 }
 
 func TestToolResultSuccessEmpty(t *testing.T) {
-	result := NewToolResult()
+	result := &ToolResultImpl{Content: []Content{}, IsErrorFlag: false}
 
 	if result.IsError() {
 		t.Error("Expected successful result, but IsError() returned true")
@@ -167,7 +167,7 @@ func TestToolResultSuccessEmpty(t *testing.T) {
 
 func TestToolResultError(t *testing.T) {
 	testError := errors.New("tool execution failed")
-	result := NewToolError(testError)
+	result := &ToolResultImpl{Error: testError, IsErrorFlag: true}
 
 	if !result.IsError() {
 		t.Error("Expected error result, but IsError() returned false")
@@ -184,7 +184,7 @@ func TestToolResultError(t *testing.T) {
 }
 
 func TestToolResultErrorNil(t *testing.T) {
-	result := NewToolError(nil)
+	result := &ToolResultImpl{Error: nil, IsErrorFlag: true}
 
 	// With nil error, it should still be considered an error result
 	// because it was created via NewToolError
@@ -273,6 +273,6 @@ func BenchmarkToolResultCreation(b *testing.B) {
 	content := &TextContent{Text: "Benchmark content"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		NewToolResult(content)
+		_ = &ToolResultImpl{Content: []Content{content}, IsErrorFlag: false}
 	}
 }

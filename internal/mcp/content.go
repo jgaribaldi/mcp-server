@@ -34,30 +34,24 @@ func (c *BlobContent) GetBlob() []byte {
 	return c.Data
 }
 
-type toolResult struct {
-	content []Content
-	error   error
-	isError bool
+type ToolResultImpl struct {
+	Content []Content
+	Error   error
+	IsErrorFlag bool
 }
 
-func NewToolResult(content ...Content) ToolResult {
-	return &toolResult{content: content, isError: false}
+
+
+func (r *ToolResultImpl) IsError() bool {
+	return r.IsErrorFlag
 }
 
-func NewToolError(err error) ToolResult {
-	return &toolResult{error: err, isError: true}
+func (r *ToolResultImpl) GetContent() []Content {
+	return r.Content
 }
 
-func (r *toolResult) IsError() bool {
-	return r.isError
-}
-
-func (r *toolResult) GetContent() []Content {
-	return r.content
-}
-
-func (r *toolResult) GetError() error {
-	return r.error
+func (r *ToolResultImpl) GetError() error {
+	return r.Error
 }
 
 type resourceContent struct {
