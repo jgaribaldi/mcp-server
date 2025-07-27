@@ -4,7 +4,44 @@ A Model Context Protocol (MCP) server implementation in Go 1.22.1.
 
 ## Features
 
-TBD - Features will be added as tools and resources are implemented.
+### 1. Echo Tool - Text Transformation
+Call the built-in echo tool to transform text messages:
+
+**Parameters:**
+- `message` (required): Text to transform (1-1000 characters)
+- `prefix` (optional): Text to add before the message (max 100 characters)  
+- `suffix` (optional): Text to add after the message (max 100 characters)
+- `uppercase` (optional): Convert result to uppercase (boolean)
+
+**Example:** Transform "hello" with prefix ">>> " and suffix " <<<" in uppercase returns ">>> HELLO <<<"
+
+### 2. Register New Tools
+Register custom tools by implementing the `ToolFactory` interface:
+
+**Required Methods:**
+- `GetName()`: Tool identifier
+- `GetDescription()`: Tool description
+- `GetVersion()`: Tool version
+- `GetCapabilities()`: Tool capabilities (max 20)
+- `Create(ctx, config)`: Create tool instance
+- `Validate(config)`: Validate tool configuration
+
+Your tool must implement the `mcp.Tool` interface with Name, Description, Parameters, and Handler methods.
+
+### 3. Register New Resources
+Register custom resources by implementing the `ResourceFactory` interface:
+
+**Supported URI Schemes:** file://, config://, api://, custom://, http://, https://
+
+**Required Methods:**
+- `GetURI()`: Resource URI
+- `GetName()`: Resource name
+- `GetDescription()`: Resource description
+- `GetMimeType()`: Content MIME type
+- `Create(ctx, config)`: Create resource instance
+- `Validate(config)`: Validate resource configuration
+
+Resources support caching, access control, and lifecycle management.
 
 ## Quick Start
 
