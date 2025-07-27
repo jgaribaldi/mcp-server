@@ -522,6 +522,8 @@ git init
 - Configuration and deployment considerations are included early
 - Security and production readiness are built in, not added later
 - **Traceability**: Every commit references its corresponding specification
+- No changes should be added for commit before approval from human user
+- No changes should be committed without human approval
 
 **Commit Message Guidelines:**
 - **No External Tool References**: Commit messages must NOT contain any references to AI tools, code assistants, or automated code generation tools
