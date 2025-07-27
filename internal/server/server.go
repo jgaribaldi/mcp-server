@@ -67,6 +67,16 @@ type ToolInfo struct {
 	Capabilities []string `json:"capabilities"`
 }
 
+type ToolDetailResponse struct {
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Version      string                 `json:"version"`
+	Status       string                 `json:"status"`
+	Capabilities []string               `json:"capabilities"`
+	Parameters   map[string]interface{} `json:"parameters"`
+	Requirements map[string]string      `json:"requirements"`
+}
+
 type MetricsResponse struct {
 	Status           string            `json:"status"`
 	Timestamp        string            `json:"timestamp"`
@@ -170,8 +180,8 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc("/tools/", s.handleToolsRoute)
 	s.mux.HandleFunc("/tools", s.handleToolsDiscovery)
-	s.mux.HandleFunc("/tools/health", s.handleToolsHealth)
 	s.mux.HandleFunc("/resources/health", s.handleResourcesHealth)
 }
 
@@ -249,6 +259,127 @@ func (s *Server) handleToolsDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("tools discovery completed successfully",
 		"tool_count", len(tools),
+	)
+}
+
+func (s *Server) handleToolsRoute(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	
+	if path == "/tools/health" {
+		s.handleToolsHealth(w, r)
+		return
+	}
+	
+	if len(path) > 7 && path[:7] == "/tools/" {
+		toolName := path[7:]
+		if toolName != "" {
+			s.handleToolDetail(w, r, toolName)
+			return
+		}
+	}
+	
+	http.NotFound(w, r)
+}
+
+func (s *Server) handleToolDetail(w http.ResponseWriter, r *http.Request, toolName string) {
+	s.logger.Info("tool detail requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"tool_name", toolName,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	response, err := s.buildToolDetailResponse(toolName)
+	if err != nil {
+		s.writeToolDetailError(w, toolName, err)
+		return
+	}
+
+	s.writeToolDetailSuccess(w, toolName, response)
+}
+
+func (s *Server) buildToolDetailResponse(toolName string) (*ToolDetailResponse, error) {
+	tool, err := s.toolRegistry.Get(toolName)
+	if err != nil {
+		return nil, fmt.Errorf("tool not found: %w", err)
+	}
+
+	factory, err := s.toolRegistry.GetFactory(toolName)
+	if err != nil {
+		return nil, fmt.Errorf("factory not found: %w", err)
+	}
+
+	toolInfo, err := s.getToolInfo(toolName)
+	if err != nil {
+		return nil, err
+	}
+
+	parameters := s.parseToolParameters(tool, toolName)
+
+	response := &ToolDetailResponse{
+		Name:         toolInfo.Name,
+		Description:  toolInfo.Description,
+		Version:      toolInfo.Version,
+		Status:       string(toolInfo.Status),
+		Capabilities: toolInfo.Capabilities,
+		Parameters:   parameters,
+		Requirements: factory.Requirements(),
+	}
+
+	return response, nil
+}
+
+func (s *Server) getToolInfo(toolName string) (*tools.ToolInfo, error) {
+	toolInfos := s.toolRegistry.List()
+	for _, info := range toolInfos {
+		if info.Name == toolName {
+			return &info, nil
+		}
+	}
+	return nil, fmt.Errorf("tool info not found")
+}
+
+func (s *Server) parseToolParameters(tool mcp.Tool, toolName string) map[string]interface{} {
+	var parameters map[string]interface{}
+	if tool.Parameters() != nil {
+		if err := json.Unmarshal(tool.Parameters(), &parameters); err != nil {
+			s.logger.Error("failed to unmarshal tool parameters",
+				"tool_name", toolName,
+				"error", err,
+			)
+		}
+	}
+	return parameters
+}
+
+func (s *Server) writeToolDetailError(w http.ResponseWriter, toolName string, err error) {
+	s.logger.Info("tool detail error",
+		"tool_name", toolName,
+		"error", err,
+	)
+	w.WriteHeader(http.StatusNotFound)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"error": "tool not found"}`))
+}
+
+func (s *Server) writeToolDetailSuccess(w http.ResponseWriter, toolName string, response *ToolDetailResponse) {
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal tool detail response",
+			"tool_name", toolName,
+			"error", err,
+		)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("tool detail completed successfully",
+		"tool_name", toolName,
 	)
 }
 
