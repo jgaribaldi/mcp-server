@@ -401,7 +401,7 @@ func TestFileSystemResource_String(t *testing.T) {
 	}
 }
 
-func TestFileSystemResourceHandler_Placeholder(t *testing.T) {
+func TestFileSystemResourceHandler_Integration(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "resource_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -409,7 +409,8 @@ func TestFileSystemResourceHandler_Placeholder(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	log := createTestLogger(t)
-	testFile := createTestFile(t, tmpDir, "handler_test.txt", "handler test content")
+	testContent := "integration test content"
+	testFile := createTestFile(t, tmpDir, "integration_test.txt", testContent)
 
 	config := createTestResourceConfig(testFile, log)
 	resource, err := NewFileSystemResource(config)
@@ -422,15 +423,25 @@ func TestFileSystemResourceHandler_Placeholder(t *testing.T) {
 		t.Fatal("Handler is nil")
 	}
 
-	// Test placeholder implementation
+	// Test successful read
 	ctx := context.Background()
-	_, err = handler.Read(ctx, resource.URI())
-	if err == nil {
-		t.Error("Expected error from placeholder Read implementation")
+	content, err := handler.Read(ctx, resource.URI())
+	if err != nil {
+		t.Fatalf("Handler Read failed: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("Expected 'not yet implemented' error, got: %v", err)
+	if content == nil {
+		t.Fatal("Handler returned nil content")
+	}
+
+	// Verify content matches
+	contentItems := content.GetContent()
+	if len(contentItems) != 1 {
+		t.Fatalf("Expected 1 content item, got %d", len(contentItems))
+	}
+
+	if contentItems[0].GetText() != testContent {
+		t.Errorf("Expected content '%s', got '%s'", testContent, contentItems[0].GetText())
 	}
 }
 

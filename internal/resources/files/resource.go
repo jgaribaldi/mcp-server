@@ -1,7 +1,6 @@
 package files
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -180,24 +179,3 @@ func (r *FileSystemResource) String() string {
 		r.uri, r.filePath, r.size, r.mimeType)
 }
 
-// FileSystemResourceHandler provides a forward declaration for the handler
-// The actual implementation will be in handler.go (commit 9.4)
-type FileSystemResourceHandler struct {
-	resource *FileSystemResource
-	logger   *logger.Logger
-}
-
-func NewFileSystemResourceHandler(resource *FileSystemResource, logger *logger.Logger) *FileSystemResourceHandler {
-	return &FileSystemResourceHandler{
-		resource: resource,
-		logger:   logger,
-	}
-}
-
-// Placeholder implementation - will be completed in commit 9.4
-func (h *FileSystemResourceHandler) Read(ctx context.Context, uri string) (mcp.ResourceContent, error) {
-	// This is a placeholder that will be fully implemented in commit 9.4
-	h.logger.Warn("file system resource handler read method not yet implemented",
-		"uri", uri)
-	return nil, fmt.Errorf("read method not yet implemented")
-}
