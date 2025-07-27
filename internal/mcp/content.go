@@ -54,22 +54,16 @@ func (r *ToolResultImpl) GetError() error {
 	return r.Error
 }
 
-type resourceContent struct {
-	content  []Content
-	mimeType string
+type ResourceContentImpl struct {
+	Content  []Content
+	MimeType string
 }
 
-func NewResourceContent(mimeType string, content ...Content) ResourceContent {
-	return &resourceContent{
-		content:  content,
-		mimeType: mimeType,
-	}
+
+func (r *ResourceContentImpl) GetContent() []Content {
+	return r.Content
 }
 
-func (r *resourceContent) GetContent() []Content {
-	return r.content
-}
-
-func (r *resourceContent) GetMimeType() string {
-	return r.mimeType
+func (r *ResourceContentImpl) GetMimeType() string {
+	return r.MimeType
 }

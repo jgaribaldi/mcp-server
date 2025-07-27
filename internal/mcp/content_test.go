@@ -202,7 +202,7 @@ func TestResourceContent(t *testing.T) {
 	blobContent := &BlobContent{Data: []byte("Resource binary")}
 	mimeType := "application/json"
 
-	resourceContent := NewResourceContent(mimeType, textContent, blobContent)
+	resourceContent := &ResourceContentImpl{Content: []Content{textContent, blobContent}, MimeType: mimeType}
 
 	if resourceContent.GetMimeType() != mimeType {
 		t.Errorf("Expected MIME type '%s', got '%s'", mimeType, resourceContent.GetMimeType())
@@ -224,7 +224,7 @@ func TestResourceContent(t *testing.T) {
 
 func TestResourceContentEmpty(t *testing.T) {
 	mimeType := "text/plain"
-	resourceContent := NewResourceContent(mimeType)
+	resourceContent := &ResourceContentImpl{Content: []Content{}, MimeType: mimeType}
 
 	if resourceContent.GetMimeType() != mimeType {
 		t.Errorf("Expected MIME type '%s', got '%s'", mimeType, resourceContent.GetMimeType())
@@ -238,7 +238,7 @@ func TestResourceContentEmpty(t *testing.T) {
 
 func TestResourceContentEmptyMimeType(t *testing.T) {
 	textContent := &TextContent{Text: "Some content"}
-	resourceContent := NewResourceContent("", textContent)
+	resourceContent := &ResourceContentImpl{Content: []Content{textContent}, MimeType: ""}
 
 	if resourceContent.GetMimeType() != "" {
 		t.Errorf("Expected empty MIME type, got '%s'", resourceContent.GetMimeType())

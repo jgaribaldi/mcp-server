@@ -72,7 +72,7 @@ func (m *mockResourceHandler) Read(ctx context.Context, uri string) (ResourceCon
 	if m.readFunc != nil {
 		return m.readFunc(ctx, uri)
 	}
-	return NewResourceContent("text/plain", &TextContent{Text: "mock resource content"}), nil
+	return &ResourceContentImpl{Content: []Content{&TextContent{Text: "mock resource content"}}, MimeType: "text/plain"}, nil
 }
 
 func TestNewServer(t *testing.T) {
