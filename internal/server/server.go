@@ -55,6 +55,18 @@ type ToolHealthInfo struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 }
 
+type ToolDiscoveryResponse struct {
+	Tools []ToolInfo `json:"tools"`
+}
+
+type ToolInfo struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Version      string   `json:"version"`
+	Status       string   `json:"status"`
+	Capabilities []string `json:"capabilities"`
+}
+
 type MetricsResponse struct {
 	Status           string            `json:"status"`
 	Timestamp        string            `json:"timestamp"`
@@ -158,6 +170,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc("/tools", s.handleToolsDiscovery)
 	s.mux.HandleFunc("/tools/health", s.handleToolsHealth)
 	s.mux.HandleFunc("/resources/health", s.handleResourcesHealth)
 }
@@ -193,6 +206,49 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("health check completed successfully",
 		"status", response.Status,
 		"timestamp", response.Timestamp,
+	)
+}
+
+func (s *Server) handleToolsDiscovery(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("tools discovery requested",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+	)
+
+	toolInfos := s.toolRegistry.List()
+	tools := make([]ToolInfo, len(toolInfos))
+	
+	for i, toolInfo := range toolInfos {
+		tools[i] = ToolInfo{
+			Name:         toolInfo.Name,
+			Description:  toolInfo.Description,
+			Version:      toolInfo.Version,
+			Status:       string(toolInfo.Status),
+			Capabilities: toolInfo.Capabilities,
+		}
+	}
+
+	response := ToolDiscoveryResponse{
+		Tools: tools,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		s.logger.Error("failed to marshal tools discovery response",
+			"error", err,
+		)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+
+	s.logger.Info("tools discovery completed successfully",
+		"tool_count", len(tools),
 	)
 }
 
