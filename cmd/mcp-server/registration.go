@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"mcp-server/internal/config"
 	"mcp-server/internal/logger"
 	"mcp-server/internal/resources"
@@ -41,11 +43,14 @@ func registerFileSystemResource(registry resources.ResourceRegistry, cfg *config
 
 	log.Info("Registering file system resource factory")
 
+	// Register factory with base directory URI
+	baseURI := fmt.Sprintf("file://%s", cfg.FileResource.BaseDirectory)
+	
 	factoryConfig := files.FileSystemFactoryConfig{
 		Name:               "file-system",
 		Description:        "File system resource factory for secure file access",
 		Version:            "1.0.0",
-		BaseURI:            "file://",
+		BaseURI:            baseURI,
 		BasePath:           cfg.FileResource.BaseDirectory,
 		AllowedDirectories: cfg.FileResource.AllowedDirectories,
 		MaxFileSize:        cfg.FileResource.MaxFileSize,
@@ -60,7 +65,7 @@ func registerFileSystemResource(registry resources.ResourceRegistry, cfg *config
 		return err
 	}
 
-	if err := registry.Register("file://", factory); err != nil {
+	if err := registry.Register(baseURI, factory); err != nil {
 		log.Error("Failed to register file system resource factory", "error", err)
 		return err
 	}

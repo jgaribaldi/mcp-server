@@ -3,8 +3,11 @@ package files
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"mcp-server/internal/logger"
 	"mcp-server/internal/mcp"
@@ -401,6 +404,225 @@ func (f *FileSystemResourceFactory) SupportsPath(path string) bool {
 
 	return false
 }
+
+type FileSystemHealthCheck struct {
+	Status              string                  `json:"status"`
+	Timestamp           string                  `json:"timestamp"`
+	DirectoryHealth     map[string]DirectoryStatus `json:"directory_health"`
+	PermissionHealth    map[string]bool         `json:"permission_health"`
+	DiskSpaceWarnings   []string               `json:"disk_space_warnings,omitempty"`
+	ConfigurationIssues []string               `json:"configuration_issues,omitempty"`
+	OverallAccessible   bool                   `json:"overall_accessible"`
+}
+
+type DirectoryStatus struct {
+	Exists     bool   `json:"exists"`
+	Readable   bool   `json:"readable"`
+	Writable   bool   `json:"writable"`
+	ErrorMsg   string `json:"error_msg,omitempty"`
+}
+
+type DirectoryHealthChecker struct {
+	logger *logger.Logger
+}
+
+func NewDirectoryHealthChecker(log *logger.Logger) *DirectoryHealthChecker {
+	return &DirectoryHealthChecker{logger: log}
+}
+
+func (d *DirectoryHealthChecker) CheckDirectories(basePath string, allowedDirs []string) map[string]DirectoryStatus {
+	directoryHealth := make(map[string]DirectoryStatus)
+	
+	if basePath != "" {
+		directoryHealth[basePath] = d.checkSingleDirectory(basePath)
+	}
+	
+	for _, dir := range allowedDirs {
+		directoryHealth[dir] = d.checkSingleDirectory(dir)
+	}
+	
+	return directoryHealth
+}
+
+func (d *DirectoryHealthChecker) CheckPermissions(directoryResults map[string]DirectoryStatus) map[string]bool {
+	permissionHealth := make(map[string]bool)
+	
+	for path, status := range directoryResults {
+		permissionHealth[path] = status.Readable && status.Writable
+	}
+	
+	return permissionHealth
+}
+
+func (d *DirectoryHealthChecker) checkSingleDirectory(dirPath string) DirectoryStatus {
+	status := DirectoryStatus{
+		Exists:   false,
+		Readable: false,
+		Writable: false,
+	}
+
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			status.ErrorMsg = "directory does not exist"
+		} else {
+			status.ErrorMsg = fmt.Sprintf("stat error: %v", err)
+		}
+		return status
+	}
+
+	status.Exists = true
+
+	if !info.IsDir() {
+		status.ErrorMsg = "path exists but is not a directory"
+		return status
+	}
+
+	if d.testReadAccess(dirPath) {
+		status.Readable = true
+	} else {
+		status.ErrorMsg = "directory not readable"
+	}
+
+	if d.testWriteAccess(dirPath) {
+		status.Writable = true
+	} else if status.ErrorMsg == "" {
+		status.ErrorMsg = "directory not writable"
+	}
+
+	return status
+}
+
+func (d *DirectoryHealthChecker) testReadAccess(dirPath string) bool {
+	_, err := os.ReadDir(dirPath)
+	return err == nil
+}
+
+func (d *DirectoryHealthChecker) testWriteAccess(dirPath string) bool {
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		return false
+	}
+
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		uid := os.Getuid()
+		gid := os.Getgid()
+		mode := info.Mode()
+
+		if uint32(uid) == stat.Uid {
+			return mode&0200 != 0
+		}
+
+		if uint32(gid) == stat.Gid {
+			return mode&0020 != 0
+		}
+
+		return mode&0002 != 0
+	}
+
+	tempFile := filepath.Join(dirPath, ".mcp_health_test")
+	file, err := os.Create(tempFile)
+	if err != nil {
+		return false
+	}
+	file.Close()
+	os.Remove(tempFile)
+	return true
+}
+
+type ConfigurationValidator struct{}
+
+func NewConfigurationValidator() *ConfigurationValidator {
+	return &ConfigurationValidator{}
+}
+
+func (c *ConfigurationValidator) ValidateDirectoryConfig(basePath string, allowedDirs []string) []string {
+	var issues []string
+	
+	if len(allowedDirs) == 0 && basePath == "" {
+		issues = append(issues, "No allowed directories or base path configured - unrestricted access")
+	}
+	
+	return issues
+}
+
+func (c *ConfigurationValidator) ValidateFileSizeConfig(maxFileSize int64) ([]string, []string) {
+	var warnings []string
+	var issues []string
+	
+	if maxFileSize <= 0 {
+		issues = append(issues, "Invalid max file size configuration")
+	}
+	
+	if maxFileSize > 100*1024*1024 { // 100MB
+		warnings = append(warnings, fmt.Sprintf("Large max file size configured: %d bytes", maxFileSize))
+	}
+	
+	return warnings, issues
+}
+
+type HealthStatusEvaluator struct{}
+
+func NewHealthStatusEvaluator() *HealthStatusEvaluator {
+	return &HealthStatusEvaluator{}
+}
+
+func (h *HealthStatusEvaluator) EvaluateOverallStatus(directoryHealth map[string]DirectoryStatus, configIssues []string) string {
+	if len(configIssues) > 0 {
+		return "degraded"
+	}
+	
+	for _, status := range directoryHealth {
+		if !status.Exists || !status.Readable {
+			return "degraded"
+		}
+	}
+	
+	return "healthy"
+}
+
+func (h *HealthStatusEvaluator) DetermineAccessibility(directoryHealth map[string]DirectoryStatus) bool {
+	for _, status := range directoryHealth {
+		if !status.Exists || !status.Readable {
+			return false
+		}
+	}
+	return true
+}
+
+func (f *FileSystemResourceFactory) HealthCheck() FileSystemHealthCheck {
+	dirChecker := NewDirectoryHealthChecker(f.logger)
+	configValidator := NewConfigurationValidator()
+	statusEvaluator := NewHealthStatusEvaluator()
+	
+	directoryHealth := dirChecker.CheckDirectories(f.basePath, f.allowedDirs)
+	permissionHealth := dirChecker.CheckPermissions(directoryHealth)
+	configIssues := configValidator.ValidateDirectoryConfig(f.basePath, f.allowedDirs)
+	diskWarnings, sizeIssues := configValidator.ValidateFileSizeConfig(f.maxFileSize)
+	
+	allConfigIssues := append(configIssues, sizeIssues...)
+	
+	status := statusEvaluator.EvaluateOverallStatus(directoryHealth, allConfigIssues)
+	accessible := statusEvaluator.DetermineAccessibility(directoryHealth)
+
+	f.logger.Debug("file system factory health check completed",
+		"status", status,
+		"accessible", accessible,
+		"directories_checked", len(directoryHealth),
+		"config_issues", len(allConfigIssues),
+	)
+
+	return FileSystemHealthCheck{
+		Status:              status,
+		Timestamp:           time.Now().UTC().Format(time.RFC3339),
+		DirectoryHealth:     directoryHealth,
+		PermissionHealth:    permissionHealth,
+		DiskSpaceWarnings:   diskWarnings,
+		ConfigurationIssues: allConfigIssues,
+		OverallAccessible:   accessible,
+	}
+}
+
 
 func (f *FileSystemResourceFactory) String() string {
 	return fmt.Sprintf("FileSystemResourceFactory{Name: %s, Version: %s, BaseURI: %s, AllowedDirs: %d}", 
