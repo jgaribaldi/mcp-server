@@ -26,12 +26,18 @@ const (
 	DefaultDebugMode       = false
 	DefaultEnableMetrics   = true
 	DefaultBufferSize      = 4096
+	
+	DefaultFileResourceEnabled     = false
+	DefaultFileResourceBaseDir     = "/tmp/mcp-files"
+	DefaultFileResourceMaxSize     = 10 * 1024 * 1024 // 10MB
+	DefaultFileResourceCacheTimeout = 5 * time.Minute
 )
 
 type Config struct {
-	Server ServerConfig
-	Logger LoggerConfig
-	MCP    MCPConfig
+	Server       ServerConfig
+	Logger       LoggerConfig
+	MCP          MCPConfig
+	FileResource FileResourceConfig
 }
 
 type ServerConfig struct {
@@ -67,6 +73,16 @@ type ResourceCacheConfig struct {
 	Enabled        bool `json:"enabled"`
 }
 
+type FileResourceConfig struct {
+	Enabled            bool          `json:"enabled"`
+	BaseDirectory      string        `json:"base_directory"`
+	AllowedDirectories []string      `json:"allowed_directories"`
+	MaxFileSize        int64         `json:"max_file_size_bytes"`
+	AllowedExtensions  []string      `json:"allowed_extensions"`
+	BlockedPatterns    []string      `json:"blocked_patterns"`
+	CacheTimeout       time.Duration `json:"cache_timeout"`
+}
+
 type ValidationErrors []string
 
 func (ve ValidationErrors) Error() string {
@@ -80,9 +96,10 @@ func (ve ValidationErrors) Error() string {
 }
 
 type FileConfig struct {
-	Server FileServerConfig `yaml:"server"`
-	Logger FileLoggerConfig `yaml:"logger"`
-	MCP    FileMCPConfig    `yaml:"mcp"`
+	Server       FileServerConfig       `yaml:"server"`
+	Logger       FileLoggerConfig       `yaml:"logger"`
+	MCP          FileMCPConfig          `yaml:"mcp"`
+	FileResource FileFileResourceConfig `yaml:"file_resource"`
 }
 
 type FileServerConfig struct {
@@ -118,6 +135,16 @@ type FileResourceCacheConfig struct {
 	Enabled        bool `yaml:"enabled"`
 }
 
+type FileFileResourceConfig struct {
+	Enabled            bool     `yaml:"enabled"`
+	BaseDirectory      string   `yaml:"base_directory"`
+	AllowedDirectories []string `yaml:"allowed_directories"`
+	MaxFileSize        int64    `yaml:"max_file_size_bytes"`
+	AllowedExtensions  []string `yaml:"allowed_extensions"`
+	BlockedPatterns    []string `yaml:"blocked_patterns"`
+	CacheTimeout       string   `yaml:"cache_timeout"`
+}
+
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -151,6 +178,25 @@ func getEnvBool(key string, defaultValue bool) bool {
 		case "false", "0", "no", "off":
 			return false
 		}
+	}
+	return defaultValue
+}
+
+func getEnvInt64(key string, defaultValue int64) int64 {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvStringSlice(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		if value == "" {
+			return []string{}
+		}
+		return strings.Split(value, ",")
 	}
 	return defaultValue
 }
@@ -218,6 +264,15 @@ func loadFromEnvironment() *Config {
 				MaxSize:        getEnvInt("MCP_RESOURCE_CACHE_MAX_SIZE", 1000),
 				Enabled:        getEnvBool("MCP_RESOURCE_CACHE_ENABLED", true),
 			},
+		},
+		FileResource: FileResourceConfig{
+			Enabled:       getEnvBool("MCP_FILE_RESOURCE_ENABLED", DefaultFileResourceEnabled),
+			BaseDirectory: getEnv("MCP_FILE_RESOURCE_BASE_DIR", DefaultFileResourceBaseDir),
+			AllowedDirectories: getEnvStringSlice("MCP_FILE_RESOURCE_ALLOWED_DIRS", []string{DefaultFileResourceBaseDir}),
+			MaxFileSize:        getEnvInt64("MCP_FILE_RESOURCE_MAX_SIZE", DefaultFileResourceMaxSize),
+			AllowedExtensions:  getEnvStringSlice("MCP_FILE_RESOURCE_ALLOWED_EXTS", []string{".txt", ".md", ".json", ".yaml", ".yml"}),
+			BlockedPatterns:    getEnvStringSlice("MCP_FILE_RESOURCE_BLOCKED_PATTERNS", []string{".*", "~*", "*.tmp"}),
+			CacheTimeout:       getEnvDuration("MCP_FILE_RESOURCE_CACHE_TIMEOUT", DefaultFileResourceCacheTimeout),
 		},
 	}
 }
@@ -302,6 +357,32 @@ func mergeResourceCacheConfig(base *ResourceCacheConfig, file *FileResourceCache
 	}
 }
 
+func mergeFileResourceConfig(base *FileResourceConfig, file *FileFileResourceConfig) {
+	if os.Getenv("MCP_FILE_RESOURCE_ENABLED") == "" {
+		base.Enabled = file.Enabled
+	}
+	if file.BaseDirectory != "" && os.Getenv("MCP_FILE_RESOURCE_BASE_DIR") == "" {
+		base.BaseDirectory = file.BaseDirectory
+	}
+	if len(file.AllowedDirectories) > 0 && os.Getenv("MCP_FILE_RESOURCE_ALLOWED_DIRS") == "" {
+		base.AllowedDirectories = file.AllowedDirectories
+	}
+	if file.MaxFileSize != 0 && os.Getenv("MCP_FILE_RESOURCE_MAX_SIZE") == "" {
+		base.MaxFileSize = file.MaxFileSize
+	}
+	if len(file.AllowedExtensions) > 0 && os.Getenv("MCP_FILE_RESOURCE_ALLOWED_EXTS") == "" {
+		base.AllowedExtensions = file.AllowedExtensions
+	}
+	if len(file.BlockedPatterns) > 0 && os.Getenv("MCP_FILE_RESOURCE_BLOCKED_PATTERNS") == "" {
+		base.BlockedPatterns = file.BlockedPatterns
+	}
+	if file.CacheTimeout != "" && os.Getenv("MCP_FILE_RESOURCE_CACHE_TIMEOUT") == "" {
+		if duration, err := time.ParseDuration(file.CacheTimeout); err == nil {
+			base.CacheTimeout = duration
+		}
+	}
+}
+
 func mergeConfigs(base *Config, file *FileConfig) *Config {
 	if file == nil {
 		return base
@@ -313,6 +394,7 @@ func mergeConfigs(base *Config, file *FileConfig) *Config {
 	mergeLoggerConfig(&result.Logger, &file.Logger)
 	mergeMCPConfig(&result.MCP, &file.MCP)
 	mergeResourceCacheConfig(&result.MCP.ResourceCache, &file.MCP.ResourceCache)
+	mergeFileResourceConfig(&result.FileResource, &file.FileResource)
 	
 	return &result
 }
@@ -426,6 +508,36 @@ func validateResourceCacheConfig(cfg *ResourceCacheConfig) ValidationErrors {
 	return errors
 }
 
+func validateFileResourceConfig(cfg *FileResourceConfig) ValidationErrors {
+	var errors ValidationErrors
+	
+	if cfg.BaseDirectory == "" {
+		errors = append(errors, "file resource base directory cannot be empty (hint: use '/tmp/mcp-files' for development)")
+	} else if strings.Contains(cfg.BaseDirectory, "..") {
+		errors = append(errors, "file resource base directory cannot contain '..' (hint: use absolute paths only)")
+	}
+	
+	if cfg.MaxFileSize < 0 {
+		errors = append(errors, fmt.Sprintf("file resource max file size cannot be negative: %d", cfg.MaxFileSize))
+	} else if cfg.MaxFileSize > 100*1024*1024 {
+		errors = append(errors, fmt.Sprintf("file resource max file size very large: %d bytes (hint: typically 1MB-50MB)", cfg.MaxFileSize))
+	}
+	
+	if cfg.CacheTimeout < 0 {
+		errors = append(errors, fmt.Sprintf("file resource cache timeout cannot be negative: %v", cfg.CacheTimeout))
+	} else if cfg.CacheTimeout > time.Hour {
+		errors = append(errors, fmt.Sprintf("file resource cache timeout very large: %v (hint: typically 1m-30m)", cfg.CacheTimeout))
+	}
+	
+	for _, dir := range cfg.AllowedDirectories {
+		if strings.Contains(dir, "..") {
+			errors = append(errors, fmt.Sprintf("allowed directory cannot contain '..': %s (hint: use absolute paths only)", dir))
+		}
+	}
+	
+	return errors
+}
+
 func validateConfig(cfg *Config) error {
 	var allErrors ValidationErrors
 	
@@ -433,6 +545,7 @@ func validateConfig(cfg *Config) error {
 	allErrors = append(allErrors, validateLoggerConfig(&cfg.Logger)...)
 	allErrors = append(allErrors, validateMCPConfig(&cfg.MCP)...)
 	allErrors = append(allErrors, validateResourceCacheConfig(&cfg.MCP.ResourceCache)...)
+	allErrors = append(allErrors, validateFileResourceConfig(&cfg.FileResource)...)
 	
 	if len(allErrors) > 0 {
 		return allErrors
@@ -466,12 +579,14 @@ func (c *Config) String() string {
 Server: %s:%d (timeouts: read=%v, write=%v, idle=%v)
 Logger: level=%s, format=%s, service=%s
 MCP: timeout=%v, tools=%d, resources=%d, debug=%v
-Resource Cache: enabled=%v, timeout=%ds, max_size=%d`,
+Resource Cache: enabled=%v, timeout=%ds, max_size=%d
+File Resource: enabled=%v, base_dir=%s, max_size=%d, cache_timeout=%v`,
 		c.Server.Host, c.Server.Port,
 		c.Server.ReadTimeout, c.Server.WriteTimeout, c.Server.IdleTimeout,
 		c.Logger.Level, c.Logger.Format, c.Logger.Service,
 		c.MCP.ProtocolTimeout, c.MCP.MaxTools, c.MCP.MaxResources, c.MCP.DebugMode,
-		c.MCP.ResourceCache.Enabled, c.MCP.ResourceCache.DefaultTimeout, c.MCP.ResourceCache.MaxSize)
+		c.MCP.ResourceCache.Enabled, c.MCP.ResourceCache.DefaultTimeout, c.MCP.ResourceCache.MaxSize,
+		c.FileResource.Enabled, c.FileResource.BaseDirectory, c.FileResource.MaxFileSize, c.FileResource.CacheTimeout)
 }
 
 func (c *Config) ToJSON() (string, error) {

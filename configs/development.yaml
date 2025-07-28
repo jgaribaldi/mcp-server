@@ -23,3 +23,24 @@ mcp:
   debug_mode: true
   enable_metrics: true
   buffer_size: 8192
+
+file_resource:
+  enabled: true
+  base_directory: "/tmp/mcp-files"
+  allowed_directories:
+    - "/tmp/mcp-files"
+    - "/tmp/mcp-dev"
+  max_file_size_bytes: 10485760  # 10MB
+  allowed_extensions:
+    - ".txt"
+    - ".md"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".log"
+  blocked_patterns:
+    - ".*"
+    - "~*"
+    - "*.tmp"
+    - "*.bak"
+  cache_timeout: "5m"
