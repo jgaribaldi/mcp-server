@@ -72,6 +72,10 @@ func setupServers(cfg *config.Config, log *logger.Logger) (*server.Server, error
 		return nil, fmt.Errorf("failed to register tools: %w", err)
 	}
 
+	if err := registerAllResources(srv.ResourceRegistry(), cfg, log); err != nil {
+		return nil, fmt.Errorf("failed to register resources: %w", err)
+	}
+
 	ctx := context.Background()
 	if err := srv.StartMCP(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start MCP server: %w", err)
